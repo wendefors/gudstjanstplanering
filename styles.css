@@ -490,4 +490,28 @@ button.secondary:hover {
     width: 44px;
     height: 44px;
   }
+
+  /* Mobil: fokusera på läsbar ordning i livevyn (löpnummer + titel). */
+  .preview .plan-table {
+    table-layout: auto;
+    border-spacing: 0 0.28rem;
+  }
+
+  .preview .plan-col-category,
+  .preview .plan-col-owner {
+    display: none;
+  }
+
+  .preview .plan-col-num {
+    width: 18%;
+  }
+
+  .preview .plan-col-title {
+    width: 82%;
+  }
+
+  .preview .plan-table td {
+    padding: 0.44rem 0.48rem;
+    font-size: 0.92rem;
+  }
 }
