@@ -67,26 +67,41 @@ Om appen publiceras under ett repo-path (t.ex. `https://<user>.github.io/gudstja
 kan du fortfarande anvanda samma origin:
 `https://<user>.github.io`.
 
-### 4. Deploya function
+### 4. Skapa databasstruktur
 ```bash
-supabase functions deploy service-group --no-verify-jwt
+supabase db push
 ```
 
-### 5. Konfigurera frontend mot Supabase-function
+### 5. Deploya functioner
+```bash
+supabase functions deploy service-group --no-verify-jwt
+supabase functions deploy plans --no-verify-jwt
+```
+
+### 6. Konfigurera frontend mot Supabase-functioner
 I `index.html`, satt:
 ```html
 <script>
   window.SERVICE_GROUP_API_URL = "https://<project-ref>.functions.supabase.co/service-group";
+  window.PLANS_API_URL = "https://<project-ref>.functions.supabase.co/plans";
 </script>
 ```
 
-### 6. Testa endpoint
+### 7. Testa endpoint
 ```bash
 curl \"https://<project-ref>.functions.supabase.co/service-group?date=2026-04-05\"
+curl \"https://<project-ref>.functions.supabase.co/plans?id=<plan-id>\"
 ```
 
-### 7. Publicera frontend pa GitHub Pages
+### 8. Publicera frontend pa GitHub Pages
 Pusha repot, aktivera Pages i GitHub och verifiera att kalendersynk fungerar i publika URL:en.
+
+## Delad läslänk
+- Redigeringsläget sparas i Supabase-tabellen `plans`.
+- Varje plan får en unik `share_token`.
+- Knappen `Kopiera läslänk` skapar URL med `?read=<token>`.
+- Läslänken är skrivskyddad i UI:t.
+- Länken går ut 2 dagar efter planens datum.
 
 ## Notering om PDF sidhuvud/sidfot
 Webblasaren styr sidhuvud/sidfot (datum, URL, sidnummer) i printdialogen.

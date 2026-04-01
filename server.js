@@ -408,12 +408,35 @@ function parseIcsEvents(ics) {
       continue;
     }
 
+    if (rawKey.startsWith("RECURRENCE-ID")) {
+      current.recurrenceId = value.trim();
+      continue;
+    }
+
     if (rawKey.startsWith("RRULE")) {
       current.rrule = value.trim();
     }
   }
 
   return events;
+}
+
+function assignmentPriority(event, dateIso) {
+  const recurrenceIso = parseIcsDate(event.recurrenceId);
+  if (recurrenceIso && recurrenceIso === dateIso) return 3;
+  if (!event.rrule) return 2;
+  return 1;
+}
+
+function setAssignmentWithPrecedence(assignments, assignmentScores, roleName, person, event, dateIso) {
+  if (!roleName || !person) return;
+
+  const nextScore = assignmentPriority(event, dateIso);
+  const currentScore = assignmentScores[roleName] ?? -1;
+  if (nextScore > currentScore || (nextScore === currentScore && !assignments[roleName])) {
+    assignments[roleName] = person;
+    assignmentScores[roleName] = nextScore;
+  }
 }
 
 async function fetchEventsFromIcs(sourceUrl) {
@@ -464,7 +487,9 @@ async function handleServiceGroupApi(urlObj, res) {
 
   try {
     const assignments = {};
+    const assignmentScores = {};
     let meetingLeader = "";
+    let meetingLeaderScore = -1;
     const sourceSummaries = [];
     const sources = [{ name: "primär", url: ICS_URL }];
     if (SECONDARY_ICS_URL && SECONDARY_ICS_URL !== ICS_URL) {
@@ -484,9 +509,7 @@ async function handleServiceGroupApi(urlObj, res) {
 
         sourceSummaries.push(`${source.name}: ${summary}`);
         for (const [roleName, person] of entries) {
-          if (!assignments[roleName]) {
-            assignments[roleName] = person;
-          }
+          setAssignmentWithPrecedence(assignments, assignmentScores, roleName, person, event, date);
         }
       }
 
@@ -510,14 +533,14 @@ async function handleServiceGroupApi(urlObj, res) {
         sourceSummaries.push(`${source.name} anteckning: ${summaryText || "(utan rubrik)"}`);
         for (const [roleName, person] of Object.entries(candidate.parsedDescription)) {
           if (roleName === "Mötesledare") {
-            if (!meetingLeader) {
+            const nextLeaderScore = assignmentPriority(candidate.event, date);
+            if (nextLeaderScore > meetingLeaderScore || (nextLeaderScore === meetingLeaderScore && !meetingLeader)) {
               meetingLeader = person;
+              meetingLeaderScore = nextLeaderScore;
             }
             continue;
           }
-          if (!assignments[roleName]) {
-            assignments[roleName] = person;
-          }
+          setAssignmentWithPrecedence(assignments, assignmentScores, roleName, person, candidate.event, date);
         }
       }
     }

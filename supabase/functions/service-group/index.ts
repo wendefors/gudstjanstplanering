@@ -12,6 +12,7 @@ type ParsedEvent = {
   comment?: string;
   dtstart?: string;
   dtend?: string;
+  recurrenceId?: string;
   rrule?: string;
   isAllDayStart?: boolean;
   isAllDayEnd?: boolean;
@@ -245,12 +246,42 @@ function parseIcsEvents(ics: string) {
       continue;
     }
 
+    if (rawKey.startsWith("RECURRENCE-ID")) {
+      current.recurrenceId = value.trim();
+      continue;
+    }
+
     if (rawKey.startsWith("RRULE")) {
       current.rrule = value.trim();
     }
   }
 
   return events;
+}
+
+function assignmentPriority(event: ParsedEvent, dateIso: string) {
+  const recurrenceIso = parseIcsDate(event.recurrenceId);
+  if (recurrenceIso && recurrenceIso === dateIso) return 3;
+  if (!event.rrule) return 2;
+  return 1;
+}
+
+function setAssignmentWithPrecedence(
+  assignments: Record<string, string>,
+  assignmentScores: Record<string, number>,
+  roleName: string,
+  person: string,
+  event: ParsedEvent,
+  dateIso: string
+) {
+  if (!roleName || !person) return;
+
+  const nextScore = assignmentPriority(event, dateIso);
+  const currentScore = assignmentScores[roleName] ?? -1;
+  if (nextScore > currentScore || (nextScore === currentScore && !assignments[roleName])) {
+    assignments[roleName] = person;
+    assignmentScores[roleName] = nextScore;
+  }
 }
 
 function eventCoversDate(event: ParsedEvent, dateIso: string) {
@@ -421,7 +452,9 @@ Deno.serve(async (req) => {
 
   try {
     const assignments: Record<string, string> = {};
+    const assignmentScores: Record<string, number> = {};
     let meetingLeader = "";
+    let meetingLeaderScore = -1;
     const sourceSummaries: string[] = [];
     const debugEvents: Array<Record<string, string | Record<string, string>>> = [];
 
@@ -443,9 +476,7 @@ Deno.serve(async (req) => {
 
         sourceSummaries.push(`${source.name}: ${summary}`);
         for (const [roleName, person] of entries) {
-          if (!assignments[roleName]) {
-            assignments[roleName] = person;
-          }
+          setAssignmentWithPrecedence(assignments, assignmentScores, roleName, person, event, date);
         }
       }
 
@@ -471,14 +502,14 @@ Deno.serve(async (req) => {
         sourceSummaries.push(`${source.name} anteckning: ${summaryText || "(utan rubrik)"}`);
         for (const [roleName, person] of Object.entries(candidate.parsedDescription)) {
           if (roleName === "Mötesledare") {
-            if (!meetingLeader) {
+            const nextLeaderScore = assignmentPriority(candidate.event, date);
+            if (nextLeaderScore > meetingLeaderScore || (nextLeaderScore === meetingLeaderScore && !meetingLeader)) {
               meetingLeader = person;
+              meetingLeaderScore = nextLeaderScore;
             }
             continue;
           }
-          if (!assignments[roleName]) {
-            assignments[roleName] = person;
-          }
+          setAssignmentWithPrecedence(assignments, assignmentScores, roleName, person, candidate.event, date);
         }
       }
 
@@ -490,6 +521,7 @@ Deno.serve(async (req) => {
             summary: String(event.summary || ""),
             dtstart: String(event.dtstart || ""),
             dtend: String(event.dtend || ""),
+            recurrenceId: String(event.recurrenceId || ""),
             rrule: String(event.rrule || ""),
             detailsPreview: details.slice(0, 500),
             parsedFromDetails: parseRoleAssignmentsFromDescription(details)

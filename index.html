@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Gudstjänstplanering</title>
-    <link rel="stylesheet" href="styles.css?v=20260401g" />
+    <link rel="stylesheet" href="styles.css?v=20260401h" />
   </head>
   <body>
     <header class="topbar">
@@ -16,7 +16,7 @@
     </header>
 
     <main class="layout">
-      <section class="card">
+      <section id="cardBasicInfo" class="card">
         <h2>Grundinfo</h2>
         <div class="grid three">
           <label>
@@ -34,30 +34,30 @@
         </div>
       </section>
 
-      <section class="card">
+      <section id="cardResponsibles" class="card">
         <h2>Ansvariga</h2>
         <div id="responsibleList"></div>
         <button id="addResponsible" type="button">Lägg till ansvarig</button>
       </section>
 
-      <section class="card">
+      <section id="cardAgenda" class="card">
         <h2>Mötespunkter</h2>
         <div id="agendaList"></div>
         <button id="addAgendaItem" type="button">Lägg till mötespunkt</button>
       </section>
 
-      <section class="card">
-        <h2>Livevy</h2>
+      <section id="cardLive" class="card">
+        <h2 id="liveHeading">Livevy</h2>
         <article id="livePreview" class="preview"></article>
       </section>
 
-      <section class="card actions">
-        <h2>Export och e-post</h2>
+      <section id="cardActions" class="card actions">
+        <h2 id="actionsHeading">Export och e-post</h2>
         <div class="actions-row">
-          <button id="previewBtn" type="button">Förhandsgranska</button>
           <button id="pdfBtn" type="button">Exportera till PDF</button>
           <button id="imageBtn" type="button">Spara som bild</button>
           <button id="mailBtn" type="button">Skapa e-postutkast</button>
+          <button id="readLinkBtn" type="button" class="secondary">Kopiera läslänk</button>
           <button id="clearBtn" type="button" class="danger">Ny gudstjänstordning</button>
         </div>
         <p class="muted">
@@ -116,7 +116,8 @@
       window.SERVICE_GROUP_API_URL = isGithubPages
         ? "https://ejymotvpbhrpzpblfwon.functions.supabase.co/service-group"
         : "";
+      window.PLANS_API_URL = "https://ejymotvpbhrpzpblfwon.functions.supabase.co/plans";
     </script>
-    <script src="app.js?v=20260401m" defer></script>
+    <script src="app.js?v=20260401q" defer></script>
   </body>
 </html>

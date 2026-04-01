@@ -1,3 +1,5 @@
 [functions.service-group]
 verify_jwt = false
 
+[functions.plans]
+verify_jwt = false

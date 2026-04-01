@@ -286,6 +286,12 @@ button.secondary:hover {
   display: none !important;
 }
 
+body.read-only-mode #cardBasicInfo,
+body.read-only-mode #cardResponsibles,
+body.read-only-mode #cardAgenda {
+  display: none;
+}
+
 .bible-ref {
   display: grid;
   grid-template-columns: 1.5fr 0.7fr 1fr;

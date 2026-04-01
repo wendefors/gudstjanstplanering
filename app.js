@@ -3,6 +3,10 @@ const hymnCatalog = Array.isArray(window.HYMN_CATALOG) ? window.HYMN_CATALOG : [
 const STORAGE_KEY = "gudstjanstplanering.v1";
 let serviceGroupFetchSeq = 0;
 const SERVICE_GROUP_API_URL = String(window.SERVICE_GROUP_API_URL || "").trim();
+const PLANS_API_URL = String(window.PLANS_API_URL || "").trim();
+const urlParams = new URLSearchParams(window.location.search);
+const readTokenParam = String(urlParams.get("read") || "").trim();
+const planIdParam = String(urlParams.get("plan") || "").trim();
 const bibleBookChapterCounts = [
   50, 40, 27, 36, 34, 24, 21, 4, 31, 24, 22, 25, 29, 36, 10, 13, 10, 42, 150, 31, 12, 8, 66, 52, 5, 48, 12, 14, 3,
   9, 1, 4, 7, 3, 3, 3, 2, 14, 4, 28, 16, 24, 21, 28, 16, 16, 13, 6, 6, 4, 4, 5, 3, 6, 4, 3, 1, 13, 5, 5, 3, 5, 1,
@@ -29,8 +33,11 @@ function createDefaultAgenda() {
 }
 
 const defaultAgendaOwnerTitles = new Set(["välkommen till gudstjänst", "pålysningar"]);
-
-let state = loadState();
+let currentPlanId = "";
+let currentShareToken = "";
+let saveTimer = null;
+let isReadOnlyMode = Boolean(readTokenParam);
+let state = createDefaultState();
 
 const el = {
   serviceDate: document.querySelector("#serviceDate"),
@@ -43,15 +50,17 @@ const el = {
   responsibleTemplate: document.querySelector("#responsibleTemplate"),
   agendaTemplate: document.querySelector("#agendaTemplate"),
   preview: document.querySelector("#livePreview"),
-  previewBtn: document.querySelector("#previewBtn"),
+  liveHeading: document.querySelector("#liveHeading"),
+  actionsHeading: document.querySelector("#actionsHeading"),
   pdfBtn: document.querySelector("#pdfBtn"),
   imageBtn: document.querySelector("#imageBtn"),
+  readLinkBtn: document.querySelector("#readLinkBtn"),
   mailBtn: document.querySelector("#mailBtn"),
   clearBtn: document.querySelector("#clearBtn")
 };
 
-function init() {
-  state = normalizeLoadedState(state);
+async function init() {
+  state = normalizeLoadedState(await loadState());
   el.serviceDate.value = state.date;
   el.meetingLeader.value = state.meetingLeader;
   el.serviceTheme.value = state.theme;
@@ -61,14 +70,28 @@ function init() {
   renderResponsible();
   renderAgenda();
   renderPreview();
-  syncServiceGroupResponsibleFromCalendar(el.serviceDate.value || state.date);
+  if (!isReadOnlyMode) {
+    syncServiceGroupResponsibleFromCalendar(el.serviceDate.value || state.date);
+    queueSaveState();
+  } else {
+    applyReadOnlyMode();
+    window.setInterval(() => {
+      refreshReadOnlyPlan();
+    }, 60 * 1000);
+  }
 }
 
 function wireTopFields() {
+  if (isReadOnlyMode) {
+    el.serviceDate.disabled = true;
+    el.meetingLeader.readOnly = true;
+    el.serviceTheme.readOnly = true;
+    return;
+  }
+
   el.serviceDate.addEventListener("change", (event) => {
-    state.date = event.target.value;
-    renderPreview();
-    syncServiceGroupResponsibleFromCalendar(event.target.value);
+    const nextDate = String(event.target.value || "").trim();
+    openPlanByDate(nextDate);
   });
 
   el.meetingLeader.addEventListener("input", (event) => {
@@ -83,23 +106,69 @@ function wireTopFields() {
 }
 
 function wireActions() {
-  el.addResponsible.addEventListener("click", () => {
-    state.responsible.push({ role: "", name: "", email: "", locked: false });
-    renderResponsible();
-    renderPreview();
-  });
+  if (!isReadOnlyMode) {
+    el.addResponsible.addEventListener("click", () => {
+      state.responsible.push({
+        role: "",
+        name: "",
+        email: "",
+        locked: false,
+        nameManuallyEdited: false,
+        lastCalendarName: ""
+      });
+      renderResponsible();
+      renderPreview();
+    });
 
-  el.addAgendaItem.addEventListener("click", () => {
-    state.agenda.push({ type: "custom", title: "", owner: "" });
-    renderAgenda();
-    renderPreview();
-  });
+    el.addAgendaItem.addEventListener("click", () => {
+      state.agenda.push({ type: "custom", title: "", owner: "" });
+      renderAgenda();
+      renderPreview();
+    });
+  } else {
+    el.addResponsible.hidden = true;
+    el.addAgendaItem.hidden = true;
+  }
 
-  el.previewBtn.addEventListener("click", () => openPrintPage(false));
   el.pdfBtn.addEventListener("click", () => openPrintPage(true));
   el.imageBtn.addEventListener("click", exportAsImageJpg);
-  el.mailBtn.addEventListener("click", createMailDraft);
-  el.clearBtn.addEventListener("click", resetAllData);
+  el.readLinkBtn.addEventListener("click", copyReadLink);
+  if (!isReadOnlyMode) {
+    el.mailBtn.addEventListener("click", createMailDraft);
+    el.clearBtn.addEventListener("click", resetAllData);
+  } else {
+    el.readLinkBtn.hidden = true;
+    el.mailBtn.hidden = true;
+    el.clearBtn.hidden = true;
+  }
+}
+
+function applyReadOnlyMode() {
+  document.body.classList.add("read-only-mode");
+  if (el.liveHeading) el.liveHeading.textContent = "Gudstjänstordning";
+  if (el.actionsHeading) el.actionsHeading.textContent = "Export";
+}
+
+async function copyReadLink() {
+  if (!currentShareToken) {
+    await persistState();
+  }
+  if (!currentShareToken) {
+    window.alert("Kunde inte skapa läslänk ännu. Testa igen om en sekund.");
+    return;
+  }
+
+  const url = new URL(window.location.href);
+  url.searchParams.delete("plan");
+  url.searchParams.set("read", currentShareToken);
+  const readUrl = url.toString();
+
+  try {
+    await navigator.clipboard.writeText(readUrl);
+    window.alert("Läslänk kopierad.");
+  } catch (_error) {
+    window.prompt("Kopiera läslänken:", readUrl);
+  }
 }
 
 function renderResponsible() {
@@ -113,33 +182,44 @@ function renderResponsible() {
     const remove = node.querySelector('[data-remove="responsible"]');
 
     role.value = person.role;
-    role.readOnly = Boolean(person.locked);
+    role.readOnly = Boolean(person.locked || isReadOnlyMode);
+    name.readOnly = isReadOnlyMode;
+    email.readOnly = isReadOnlyMode;
     role.classList.toggle("readonly", Boolean(person.locked));
     name.value = person.name;
     email.value = person.email;
 
-    remove.hidden = Boolean(person.locked);
+    remove.hidden = Boolean(person.locked || isReadOnlyMode);
 
-    role.addEventListener("input", (event) => {
-      state.responsible[index].role = event.target.value;
-      renderPreview();
-    });
+    if (!isReadOnlyMode) {
+      role.addEventListener("input", (event) => {
+        state.responsible[index].role = event.target.value;
+        state.responsible[index].nameManuallyEdited = false;
+        renderPreview();
+      });
 
-    name.addEventListener("input", (event) => {
-      state.responsible[index].name = event.target.value;
-      renderPreview();
-    });
+      name.addEventListener("input", (event) => {
+        state.responsible[index].name = event.target.value;
+        state.responsible[index].nameManuallyEdited = true;
+        renderPreview();
+      });
+      name.addEventListener("change", (event) => {
+        state.responsible[index].name = event.target.value;
+        state.responsible[index].nameManuallyEdited = true;
+        renderPreview();
+      });
 
-    email.addEventListener("input", (event) => {
-      state.responsible[index].email = event.target.value;
-      saveState();
-    });
+      email.addEventListener("input", (event) => {
+        state.responsible[index].email = event.target.value;
+        saveState();
+      });
 
-    remove.addEventListener("click", () => {
-      state.responsible.splice(index, 1);
-      renderResponsible();
-      renderPreview();
-    });
+      remove.addEventListener("click", () => {
+        state.responsible.splice(index, 1);
+        renderResponsible();
+        renderPreview();
+      });
+    }
 
     el.responsibleList.appendChild(node);
   });
@@ -183,113 +263,125 @@ function renderAgenda() {
       normalizedItem.bibleChapter || "1"
     );
     bibleVerses.value = normalizedItem.bibleVerses || "";
+    type.disabled = isReadOnlyMode;
+    title.readOnly = isReadOnlyMode;
+    hymnSearch.readOnly = isReadOnlyMode;
+    hymnSelect.disabled = isReadOnlyMode;
+    bibleBook.disabled = isReadOnlyMode;
+    bibleChapter.disabled = isReadOnlyMode;
+    bibleVerses.readOnly = isReadOnlyMode;
+    owner.readOnly = isReadOnlyMode;
+    remove.hidden = isReadOnlyMode;
+    moveUp.hidden = isReadOnlyMode;
+    moveDown.hidden = isReadOnlyMode;
 
     syncAgendaFieldVisibility(normalizedItem.type, { title, hymnPicker, bibleRef });
+    if (!isReadOnlyMode) {
+      type.addEventListener("change", (event) => {
+        const nextType = event.target.value;
+        const nextItem = { ...state.agenda[index], type: nextType };
 
-    type.addEventListener("change", (event) => {
-      const nextType = event.target.value;
-      const nextItem = { ...state.agenda[index], type: nextType };
-
-      if (nextType === "bible") {
-        nextItem.bibleBook = nextItem.bibleBook || bibleBooks[0] || "";
-        nextItem.bibleChapter = nextItem.bibleChapter || "1";
-        nextItem.bibleVerses = nextItem.bibleVerses || "";
-        if (!(nextItem.owner || "").trim()) {
-          nextItem.owner = getInitialsFromName(state.meetingLeader);
+        if (nextType === "bible") {
+          nextItem.bibleBook = nextItem.bibleBook || bibleBooks[0] || "";
+          nextItem.bibleChapter = nextItem.bibleChapter || "1";
+          nextItem.bibleVerses = nextItem.bibleVerses || "";
+          if (!(nextItem.owner || "").trim()) {
+            nextItem.owner = getInitialsFromName(state.meetingLeader);
+          }
         }
-      }
 
-      if (nextType === "hymn") {
-        nextItem.hymnInput = nextItem.hymnInput || hymnCatalog[0]?.label || "";
-        nextItem.hymnSearchTerm = "";
-        if (!(nextItem.owner || "").trim()) {
-          nextItem.owner = getInitialsForRole("Organist");
+        if (nextType === "hymn") {
+          nextItem.hymnInput = nextItem.hymnInput || hymnCatalog[0]?.label || "";
+          nextItem.hymnSearchTerm = "";
+          if (!(nextItem.owner || "").trim()) {
+            nextItem.owner = getInitialsForRole("Organist");
+          }
         }
-      }
 
-      if (nextType === "sermon") {
-        if (!(nextItem.owner || "").trim()) {
-          nextItem.owner = getInitialsForRole("Predikant");
+        if (nextType === "sermon") {
+          if (!(nextItem.owner || "").trim()) {
+            nextItem.owner = getInitialsForRole("Predikant");
+          }
         }
-      }
 
-      state.agenda[index] = normalizeAgendaItem(nextItem);
-      renderAgenda();
-      renderPreview();
-    });
+        state.agenda[index] = normalizeAgendaItem(nextItem);
+        renderAgenda();
+        renderPreview();
+      });
 
-    title.addEventListener("input", (event) => {
-      state.agenda[index].title = event.target.value;
-      renderPreview();
-    });
+      title.addEventListener("input", (event) => {
+        state.agenda[index].title = event.target.value;
+        renderPreview();
+      });
 
-    hymnSearch.addEventListener("input", (event) => {
-      const filterText = event.target.value;
-      state.agenda[index].hymnSearchTerm = filterText;
-      populateHymnSelect(hymnSelect, filterText, state.agenda[index].hymnInput || "");
-      const firstOption = hymnSelect.options[0];
-      if (firstOption && firstOption.value && isCloseHymnMatch(filterText, firstOption.value)) {
-        state.agenda[index].hymnInput = firstOption.value;
-      }
-      renderPreview();
-    });
+      hymnSearch.addEventListener("input", (event) => {
+        const filterText = event.target.value;
+        state.agenda[index].hymnSearchTerm = filterText;
+        populateHymnSelect(hymnSelect, filterText, state.agenda[index].hymnInput || "");
+        const firstOption = hymnSelect.options[0];
+        if (firstOption && firstOption.value && isCloseHymnMatch(filterText, firstOption.value)) {
+          state.agenda[index].hymnInput = firstOption.value;
+        }
+        renderPreview();
+      });
 
-    hymnSelect.addEventListener("change", (event) => {
-      const value = event.target.value;
-      state.agenda[index].hymnInput = value;
-      renderPreview();
-    });
+      hymnSelect.addEventListener("change", (event) => {
+        const value = event.target.value;
+        state.agenda[index].hymnInput = value;
+        renderPreview();
+      });
 
-    bibleBook.addEventListener("change", (event) => {
-      const nextBook = event.target.value;
-      state.agenda[index].bibleBook = nextBook;
+      bibleBook.addEventListener("change", (event) => {
+        const nextBook = event.target.value;
+        state.agenda[index].bibleBook = nextBook;
 
-      const chapterCount = bibleBookChapters[nextBook] || 1;
-      const currentChapter = Number.parseInt(state.agenda[index].bibleChapter || "1", 10);
-      const nextChapter = Number.isFinite(currentChapter) && currentChapter >= 1 && currentChapter <= chapterCount ? currentChapter : 1;
+        const chapterCount = bibleBookChapters[nextBook] || 1;
+        const currentChapter = Number.parseInt(state.agenda[index].bibleChapter || "1", 10);
+        const nextChapter = Number.isFinite(currentChapter) && currentChapter >= 1 && currentChapter <= chapterCount ? currentChapter : 1;
 
-      state.agenda[index].bibleChapter = String(nextChapter);
-      populateBibleChaptersSelect(bibleChapter, nextBook, state.agenda[index].bibleChapter);
-      renderPreview();
-    });
+        state.agenda[index].bibleChapter = String(nextChapter);
+        populateBibleChaptersSelect(bibleChapter, nextBook, state.agenda[index].bibleChapter);
+        renderPreview();
+      });
 
-    bibleChapter.addEventListener("change", (event) => {
-      state.agenda[index].bibleChapter = event.target.value;
-      renderPreview();
-    });
+      bibleChapter.addEventListener("change", (event) => {
+        state.agenda[index].bibleChapter = event.target.value;
+        renderPreview();
+      });
 
-    bibleVerses.addEventListener("input", (event) => {
-      state.agenda[index].bibleVerses = event.target.value;
-      renderPreview();
-    });
+      bibleVerses.addEventListener("input", (event) => {
+        state.agenda[index].bibleVerses = event.target.value;
+        renderPreview();
+      });
 
-    owner.addEventListener("input", (event) => {
-      state.agenda[index].owner = event.target.value;
-      renderPreview();
-    });
+      owner.addEventListener("input", (event) => {
+        state.agenda[index].owner = event.target.value;
+        renderPreview();
+      });
 
-    remove.addEventListener("click", () => {
-      state.agenda.splice(index, 1);
-      renderAgenda();
-      renderPreview();
-    });
+      remove.addEventListener("click", () => {
+        state.agenda.splice(index, 1);
+        renderAgenda();
+        renderPreview();
+      });
 
-    moveUp.addEventListener("click", () => {
-      if (index === 0) return;
-      [state.agenda[index - 1], state.agenda[index]] = [state.agenda[index], state.agenda[index - 1]];
-      renderAgenda();
-      renderPreview();
-    });
+      moveUp.addEventListener("click", () => {
+        if (index === 0) return;
+        [state.agenda[index - 1], state.agenda[index]] = [state.agenda[index], state.agenda[index - 1]];
+        renderAgenda();
+        renderPreview();
+      });
 
-    moveDown.addEventListener("click", () => {
-      if (index >= state.agenda.length - 1) return;
-      [state.agenda[index + 1], state.agenda[index]] = [state.agenda[index], state.agenda[index + 1]];
-      renderAgenda();
-      renderPreview();
-    });
+      moveDown.addEventListener("click", () => {
+        if (index >= state.agenda.length - 1) return;
+        [state.agenda[index + 1], state.agenda[index]] = [state.agenda[index], state.agenda[index + 1]];
+        renderAgenda();
+        renderPreview();
+      });
+    }
 
-    moveUp.disabled = index === 0;
-    moveDown.disabled = index === state.agenda.length - 1;
+    moveUp.disabled = isReadOnlyMode || index === 0;
+    moveDown.disabled = isReadOnlyMode || index === state.agenda.length - 1;
 
     el.agendaList.appendChild(node);
   });
@@ -406,10 +498,25 @@ function getInitialsForRole(roleName) {
   return getInitialsFromName(person.name);
 }
 
-function setResponsibleNameByRole(roleName, fullName) {
+function setResponsibleNameByRole(roleName, fullName, options = {}) {
   const index = state.responsible.findIndex((entry) => entry.role === roleName);
   if (index < 0) return false;
-  state.responsible[index].name = String(fullName || "").trim();
+  const currentName = String(state.responsible[index].name || "").trim();
+  const lastCalendarName = String(state.responsible[index].lastCalendarName || "").trim();
+  const nextName = String(fullName || "").trim();
+  const source = options.source === "manual" ? "manual" : "calendar";
+  if (
+    source === "calendar" &&
+    (state.responsible[index].nameManuallyEdited || (currentName && currentName !== lastCalendarName))
+  ) {
+    return false;
+  }
+
+  state.responsible[index].name = nextName;
+  state.responsible[index].nameManuallyEdited = source === "manual";
+  if (source === "calendar") {
+    state.responsible[index].lastCalendarName = nextName;
+  }
   return true;
 }
 
@@ -418,7 +525,7 @@ function setResponsibleAssignments(assignments) {
   for (const [roleName, person] of Object.entries(assignments || {})) {
     const value = String(person || "").trim();
     if (!value) continue;
-    const updated = setResponsibleNameByRole(roleName, value);
+    const updated = setResponsibleNameByRole(roleName, value, { source: "calendar" });
     if (updated) {
       appliedRoles.push(roleName);
     }
@@ -612,35 +719,34 @@ function renderPreview() {
   saveState();
 }
 
-function createMailDraft() {
+async function createMailDraft() {
   const to = state.responsible
     .map((person) => person.email.trim())
     .filter(Boolean)
     .join(",");
 
+  if (!currentShareToken) {
+    await persistState();
+  }
+
   const plan = buildPlanData();
   const subject = `Gudstjänstordning ${plan.dateLabel}`;
-  const agendaLines = plan.agenda.map((item) => {
-    const category = String(item.category || "").trim();
-    const title = String(item.title || "").trim();
-    const owner = String(item.owner || "").trim();
-    const ownerSuffix = owner ? ` (${owner})` : "";
-
-    if (category && title) return `${item.number}. ${category}: ${title}${ownerSuffix}`;
-    if (title) return `${item.number}. ${title}${ownerSuffix}`;
-    return `${item.number}. ${category}${ownerSuffix}`;
-  });
+  const readUrl = currentShareToken
+    ? (() => {
+        const url = new URL(window.location.href);
+        url.searchParams.delete("plan");
+        url.searchParams.set("read", currentShareToken);
+        return url.toString();
+      })()
+    : "[Länk]";
 
   const body = [
     "Hej!",
     "",
     `Här kommer gudstjänstordningen för ${plan.dateLabel}.`,
+    "Klicka på länken för att komma till läsläget.",
     "",
-    `Datum: ${plan.dateLabel}`,
-    `Mötesledare: ${plan.meetingLeader}`,
-    ...(plan.theme ? [`Tema: ${plan.theme}`] : []),
-    "",
-    ...agendaLines,
+    readUrl,
     ""
   ].join("\n");
 
@@ -907,22 +1013,212 @@ function formatDate(raw) {
   });
 }
 
-function loadState() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return createDefaultState();
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" ? parsed : createDefaultState();
-  } catch (_error) {
-    return createDefaultState();
+async function loadState() {
+  const defaults = createDefaultState();
+  if (!PLANS_API_URL) return defaults;
+
+  if (readTokenParam) {
+    const loaded = await fetchPlanByReadToken(readTokenParam);
+    if (loaded?.plan) {
+      currentPlanId = loaded.id || "";
+      currentShareToken = loaded.shareToken || readTokenParam;
+      return loaded.plan;
+    }
+    return defaults;
   }
+
+  if (planIdParam) {
+    const loaded = await fetchPlanById(planIdParam);
+    if (loaded?.plan) {
+      currentPlanId = loaded.id || planIdParam;
+      currentShareToken = loaded.shareToken || "";
+      return loaded.plan;
+    }
+  }
+
+  if (defaults.date) {
+    const loadedByDate = await fetchPlanByDate(defaults.date);
+    if (loadedByDate?.found && loadedByDate.plan) {
+      currentPlanId = loadedByDate.id || "";
+      currentShareToken = loadedByDate.shareToken || "";
+      return loadedByDate.plan;
+    }
+  }
+
+  return defaults;
 }
 
 function saveState() {
+  queueSaveState();
+}
+
+function queueSaveState() {
+  if (isReadOnlyMode || !PLANS_API_URL) return;
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    persistState().catch(() => {
+      // Ignore transient save errors in UI.
+    });
+  }, 700);
+}
+
+function extractPlanPayload(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  if (raw.plan && typeof raw.plan === "object") return raw.plan;
+  if (raw.payload && typeof raw.payload === "object") return raw.payload;
+  return null;
+}
+
+async function fetchPlanByReadToken(token) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    const url = new URL(PLANS_API_URL, window.location.href);
+    url.searchParams.set("token", token);
+    const response = await fetch(url.toString());
+    if (!response.ok) return null;
+    const data = await response.json();
+    if (!data?.ok) return null;
+    return {
+      id: data.id || "",
+      shareToken: data.shareToken || token,
+      plan: extractPlanPayload(data)
+    };
   } catch (_error) {
-    // Ignore storage errors (private mode/full quota).
+    return null;
+  }
+}
+
+async function fetchPlanById(id) {
+  try {
+    const url = new URL(PLANS_API_URL, window.location.href);
+    url.searchParams.set("id", id);
+    const response = await fetch(url.toString());
+    if (!response.ok) return null;
+    const data = await response.json();
+    if (!data?.ok) return null;
+    return {
+      id: data.id || id,
+      shareToken: data.shareToken || "",
+      plan: extractPlanPayload(data)
+    };
+  } catch (_error) {
+    return null;
+  }
+}
+
+async function fetchPlanByDate(dateIso) {
+  if (!PLANS_API_URL || !isValidIsoDate(dateIso)) return null;
+  try {
+    const url = new URL(PLANS_API_URL, window.location.href);
+    url.searchParams.set("date", dateIso);
+    const response = await fetch(url.toString());
+    if (!response.ok) return null;
+    const data = await response.json();
+    if (!data?.ok || !data?.found) return { found: false };
+    return {
+      found: true,
+      id: data.id || "",
+      shareToken: data.shareToken || "",
+      plan: extractPlanPayload(data)
+    };
+  } catch (_error) {
+    return null;
+  }
+}
+
+async function openPlanByDate(dateIso) {
+  const targetDate = String(dateIso || "").trim();
+  if (!isValidIsoDate(targetDate)) return;
+
+  if (!PLANS_API_URL) {
+    state.date = targetDate;
+    el.serviceDate.value = targetDate;
+    renderPreview();
+    syncServiceGroupResponsibleFromCalendar(targetDate);
+    return;
+  }
+
+  const loaded = await fetchPlanByDate(targetDate);
+  if (loaded?.found && loaded.plan) {
+    currentPlanId = loaded.id || "";
+    currentShareToken = loaded.shareToken || "";
+    state = normalizeLoadedState(loaded.plan);
+    state.date = targetDate;
+    const url = new URL(window.location.href);
+    url.searchParams.set("plan", currentPlanId);
+    url.searchParams.delete("read");
+    window.history.replaceState({}, "", url.toString());
+  } else {
+    currentPlanId = "";
+    currentShareToken = "";
+    state = createDefaultState();
+    state.date = targetDate;
+    const url = new URL(window.location.href);
+    url.searchParams.delete("plan");
+    url.searchParams.delete("read");
+    window.history.replaceState({}, "", url.toString());
+  }
+
+  el.serviceDate.value = state.date;
+  el.meetingLeader.value = state.meetingLeader;
+  el.serviceTheme.value = state.theme;
+  renderResponsible();
+  renderAgenda();
+  renderPreview();
+  syncServiceGroupResponsibleFromCalendar(targetDate);
+}
+
+async function refreshReadOnlyPlan() {
+  if (!isReadOnlyMode || !readTokenParam || !PLANS_API_URL) return;
+  const loaded = await fetchPlanByReadToken(readTokenParam);
+  if (!loaded?.plan) return;
+  state = normalizeLoadedState(loaded.plan);
+  el.serviceDate.value = state.date;
+  el.meetingLeader.value = state.meetingLeader;
+  el.serviceTheme.value = state.theme;
+  renderResponsible();
+  renderAgenda();
+  renderPreview();
+}
+
+async function persistState() {
+  if (isReadOnlyMode || !PLANS_API_URL) return;
+  const body = {
+    id: currentPlanId || null,
+    plan: {
+      date: state.date,
+      meetingLeader: state.meetingLeader,
+      theme: state.theme,
+      responsible: state.responsible.map((item) => ({
+        role: item.role,
+        name: item.name,
+        email: item.email,
+        locked: Boolean(item.locked),
+        nameManuallyEdited: Boolean(item.nameManuallyEdited),
+        lastCalendarName: typeof item.lastCalendarName === "string" ? item.lastCalendarName : ""
+      })),
+      agenda: state.agenda.map((item) => ({ ...item }))
+    }
+  };
+
+  const response = await fetch(PLANS_API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  if (!response.ok) return;
+  const data = await response.json();
+  if (!data?.ok) return;
+
+  if (typeof data.id === "string" && data.id) {
+    currentPlanId = data.id;
+    const url = new URL(window.location.href);
+    url.searchParams.set("plan", currentPlanId);
+    url.searchParams.delete("read");
+    window.history.replaceState({}, "", url.toString());
+  }
+
+  if (typeof data.shareToken === "string" && data.shareToken) {
+    currentShareToken = data.shareToken;
   }
 }
 
@@ -931,7 +1227,14 @@ function createDefaultState() {
     date: getNextSundayDateISO(),
     meetingLeader: "",
     theme: "",
-    responsible: defaultResponsibleRoles.map((role) => ({ role, name: "", email: "", locked: true })),
+    responsible: defaultResponsibleRoles.map((role) => ({
+      role,
+      name: "",
+      email: "",
+      locked: true,
+      nameManuallyEdited: false,
+      lastCalendarName: ""
+    })),
     agenda: createDefaultAgenda()
   };
 }
@@ -947,7 +1250,16 @@ function normalizeLoadedState(rawState) {
       role,
       name: typeof existing.name === "string" ? existing.name : "",
       email: typeof existing.email === "string" ? existing.email : "",
-      locked: true
+      locked: true,
+      nameManuallyEdited: Boolean(existing.nameManuallyEdited),
+      lastCalendarName:
+        typeof existing.lastCalendarName === "string"
+          ? existing.lastCalendarName
+          : Boolean(existing.nameManuallyEdited)
+            ? ""
+            : typeof existing.name === "string"
+              ? existing.name
+              : ""
     };
   });
 
@@ -957,7 +1269,16 @@ function normalizeLoadedState(rawState) {
       role: String(entry.role),
       name: typeof entry.name === "string" ? entry.name : "",
       email: typeof entry.email === "string" ? entry.email : "",
-      locked: Boolean(entry.locked)
+      locked: Boolean(entry.locked),
+      nameManuallyEdited: Boolean(entry.nameManuallyEdited),
+      lastCalendarName:
+        typeof entry.lastCalendarName === "string"
+          ? entry.lastCalendarName
+          : Boolean(entry.nameManuallyEdited)
+            ? ""
+            : typeof entry.name === "string"
+              ? entry.name
+              : ""
     });
   });
 
@@ -975,6 +1296,8 @@ function resetAllData() {
   const confirmed = window.confirm("Skapa ny gudstjänstordning och återställ till standardschemat?");
   if (!confirmed) return;
 
+  currentPlanId = "";
+  currentShareToken = "";
   state = createDefaultState();
   el.serviceDate.value = state.date;
   el.meetingLeader.value = state.meetingLeader;
@@ -1014,4 +1337,14 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
-init();
+init().catch(() => {
+  state = normalizeLoadedState(createDefaultState());
+  el.serviceDate.value = state.date;
+  el.meetingLeader.value = state.meetingLeader;
+  el.serviceTheme.value = state.theme;
+  wireTopFields();
+  wireActions();
+  renderResponsible();
+  renderAgenda();
+  renderPreview();
+});
