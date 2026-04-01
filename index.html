@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="sv">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Gudstjänstplanering</title>
+    <link rel="stylesheet" href="styles.css?v=20260331b" />
+  </head>
+  <body>
+    <header class="topbar">
+      <img src="gff_logga.jpg" alt="Gislaveds frikyrkoförsamling" class="logo" />
+      <div>
+        <h1>Gudstjänstplanering</h1>
+        <p>Planera ordning, ansvar och utskick för söndagens gudstjänst.</p>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="card">
+        <h2>Grundinfo</h2>
+        <div class="grid three">
+          <label>
+            Datum
+            <input id="serviceDate" type="date" />
+          </label>
+          <label>
+            Mötesledare
+            <input id="meetingLeader" type="text" placeholder="Namn" />
+          </label>
+          <label>
+            Tema
+            <input id="serviceTheme" type="text" />
+          </label>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Ansvariga</h2>
+        <div id="responsibleList"></div>
+        <button id="addResponsible" type="button">Lägg till ansvarig</button>
+      </section>
+
+      <section class="card">
+        <h2>Mötespunkter</h2>
+        <div id="agendaList"></div>
+        <button id="addAgendaItem" type="button">Lägg till mötespunkt</button>
+      </section>
+
+      <section class="card">
+        <h2>Livevy</h2>
+        <article id="livePreview" class="preview"></article>
+      </section>
+
+      <section class="card actions">
+        <h2>Export och e-post</h2>
+        <div class="actions-row">
+          <button id="previewBtn" type="button">Förhandsgranska</button>
+          <button id="pdfBtn" type="button">Exportera till PDF</button>
+          <button id="imageBtn" type="button">Spara som bild</button>
+          <button id="mailBtn" type="button">Skapa e-postutkast</button>
+          <button id="clearBtn" type="button" class="danger">Ny gudstjänstordning</button>
+        </div>
+        <p class="muted">
+          PDF skapas via webbläsaren. Välj "Spara som PDF" och avmarkera sidhuvud/sidfot i utskriftsdialogen.
+        </p>
+      </section>
+    </main>
+
+    <template id="responsibleTemplate">
+      <div class="row responsible-row">
+        <input data-field="role" type="text" placeholder="Roll (t.ex. Predikant)" class="resp-role" />
+        <input data-field="name" type="text" placeholder="Namn" class="resp-name" />
+        <input data-field="email" type="email" placeholder="E-post" class="resp-email" />
+        <button data-remove="responsible" type="button" class="danger resp-remove">Ta bort</button>
+      </div>
+    </template>
+
+    <template id="agendaTemplate">
+      <div class="row agenda-row">
+        <select data-field="type" class="agenda-type">
+          <option value="custom">Övrigt</option>
+          <option value="bible">Bibeltext</option>
+          <option value="hymn">Psalmer och sånger</option>
+          <option value="sermon">Predikan</option>
+        </select>
+
+        <input data-field="title" type="text" placeholder="Titel" class="agenda-main" />
+
+        <div data-field="hymnPicker" class="hidden agenda-main hymn-picker">
+          <input data-field="hymnSearch" type="text" placeholder="Sök psalmnummer eller titel" autocomplete="off" />
+          <select data-field="hymnSelect"></select>
+        </div>
+
+        <div data-field="bibleRef" class="bible-ref hidden agenda-main">
+          <select data-field="bibleBook"></select>
+          <select data-field="bibleChapter"></select>
+          <input data-field="bibleVerses" type="text" placeholder="Verser, t.ex. 16-18" />
+        </div>
+
+        <input data-field="owner" type="text" placeholder="Ansvarig" class="agenda-owner" />
+        <div class="agenda-actions">
+          <button data-move="up" type="button" class="secondary agenda-action-btn" title="Flytta upp">Upp</button>
+          <button data-move="down" type="button" class="secondary agenda-action-btn" title="Flytta ner">Ner</button>
+          <button data-remove="agenda" type="button" class="danger agenda-action-btn" title="Ta bort">Ta bort</button>
+        </div>
+      </div>
+    </template>
+
+    <script src="data/bibleBooks.js?v=20260331f"></script>
+    <script src="data/hymnCatalog.js?v=20260331f"></script>
+    <script>
+      // Sätt denna i produktion (GitHub Pages) till din Supabase Edge Function-URL.
+      // Exempel: window.SERVICE_GROUP_API_URL = "https://<project-ref>.functions.supabase.co/service-group";
+      window.SERVICE_GROUP_API_URL = "https://ejymotvpbhrpzpblfwon.functions.supabase.co/service-group";
+    </script>
+    <script src="app.js?v=20260401b" defer></script>
+  </body>
+</html>

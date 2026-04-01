@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="sv">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Gudstjänstordning</title>
+    <style>
+      @page {
+        size: A4;
+        margin: 14mm;
+      }
+
+      body {
+        font-family: Calibri, Arial, sans-serif;
+        color: #1a1a1a;
+        margin: 0;
+        padding: 16px;
+      }
+
+      .hint {
+        margin: 0 0 12px;
+        color: #5b5b5b;
+        font-size: 14px;
+      }
+
+      .print-actions {
+        margin: 0 0 12px;
+      }
+
+      .print-btn {
+        border: 1px solid #8daf3f;
+        background: #8daf3f;
+        color: #fff;
+        border-radius: 8px;
+        padding: 8px 12px;
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      .print-btn:hover {
+        filter: brightness(0.95);
+      }
+
+      .sheet {
+        border: 1px solid #d6dcc9;
+        border-radius: 12px;
+        padding: 16px;
+      }
+
+      header {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        border-bottom: 2px solid #8daf3f;
+        padding-bottom: 10px;
+        margin-bottom: 14px;
+      }
+
+      img {
+        width: 58px;
+        height: 58px;
+        object-fit: contain;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 22px;
+      }
+
+      p {
+        margin: 0;
+      }
+
+      h2 {
+        margin: 18px 0 8px;
+        font-size: 17px;
+      }
+
+      li {
+        margin-bottom: 6px;
+      }
+
+      .people-lines {
+        display: grid;
+        gap: 4px;
+      }
+
+      .plan-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 6px;
+        table-layout: fixed;
+      }
+
+      .plan-table td {
+        border: 1px solid #d6dcc9;
+        padding: 6px 7px;
+        vertical-align: top;
+        word-wrap: break-word;
+      }
+
+      .plan-col-num {
+        width: 8%;
+        text-align: center;
+      }
+
+      .plan-col-category {
+        width: 24%;
+      }
+
+      .plan-col-title {
+        width: 44%;
+      }
+
+      .plan-col-owner {
+        width: 24%;
+      }
+
+      @media print {
+        .hint {
+          display: none;
+        }
+
+        .print-actions {
+          display: none;
+        }
+
+        .sheet {
+          border: 0;
+          padding: 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="print-actions">
+      <button id="printNowBtn" type="button" class="print-btn">Skriv ut / Spara som PDF</button>
+    </div>
+    <p class="hint">Tips: avmarkera "Sidhuvuden och sidfötter" i utskriftsdialogen. Webbläsaren styr detta och lägger annars till datum, URL och sidnummer.</p>
+    <article id="sheet" class="sheet"></article>
+
+    <script>
+      function escapeHtml(value) {
+        return String(value)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#039;");
+      }
+
+      const params = new URLSearchParams(window.location.search);
+      const key = params.get("doc");
+      const mode = params.get("mode");
+      const root = document.querySelector("#sheet");
+      const printNowBtn = document.querySelector("#printNowBtn");
+
+      if (mode !== "pdf") {
+        printNowBtn.textContent = "Skriv ut";
+      }
+
+      printNowBtn.addEventListener("click", () => {
+        window.print();
+      });
+
+      if (!key) {
+        root.innerHTML = "<p>Kunde inte läsa planeringsdata.</p>";
+      } else {
+        const raw = sessionStorage.getItem(key);
+        if (!raw) {
+          root.innerHTML = "<p>Kunde inte hitta planeringsdata (öppna export från huvudsidan igen).</p>";
+        } else {
+          const data = JSON.parse(raw);
+          document.title = `Gudstjänstordning ${data.dateLabel || ""}`.trim();
+          const responsibles = (data.responsibles || [])
+            .map((person) => `<div><strong>${escapeHtml(person.role || "Roll")}</strong>: ${escapeHtml(person.name || "")}</div>`)
+            .join("");
+
+          const agendaRows = (data.agenda || [])
+            .map(
+              (item) => `
+                <tr>
+                  <td class="plan-col-num">${item.number || ""}</td>
+                  <td class="plan-col-category">${escapeHtml(item.category || "")}</td>
+                  <td class="plan-col-title">${escapeHtml(item.title || "")}</td>
+                  <td class="plan-col-owner">${escapeHtml(item.owner || "")}</td>
+                </tr>
+              `
+            )
+            .join("");
+
+          root.innerHTML = `
+            <header>
+              <img src="${data.logoPath}" alt="Logo" />
+              <div>
+                <h1>Gudstjänstordning ${escapeHtml(data.dateLabel || "")}</h1>
+                <p>Mötesledare: ${escapeHtml(data.meetingLeader || "Ej satt")}</p>
+                ${data.theme ? `<p>Tema: ${escapeHtml(data.theme)}</p>` : ""}
+              </div>
+            </header>
+
+            <h2>Ansvariga</h2>
+            <div class="people-lines">${responsibles || "<div>Inga ansvariga ifyllda.</div>"}</div>
+
+            <h2>Ordning</h2>
+            ${
+              agendaRows
+                ? `<table class="plan-table"><tbody>${agendaRows}</tbody></table>`
+                : "<div>Inga mötespunkter inlagda.</div>"
+            }
+          `;
+
+        }
+      }
+    </script>
+  </body>
+</html>

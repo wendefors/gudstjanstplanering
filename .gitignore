@@ -1,0 +1,19 @@
+# Secrets and local env
+.env
+.env.*
+!.env.example
+
+# Local-only notes/files
+*.local
+*password*
+*lösenord*
+*secret*
+
+# OS/editor noise
+.DS_Store
+.vscode/
+
+# Supabase local artifacts
+supabase/.temp/
+supabase/.branches/
+

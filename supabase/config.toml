@@ -1,0 +1,3 @@
+[functions.service-group]
+verify_jwt = false
+
