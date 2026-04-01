@@ -586,7 +586,7 @@ function renderPreview() {
     .map(
       (item) => `
         <tr>
-          <td class="plan-col-num">${item.number}</td>
+          <td class="plan-col-num"><span class="plan-num-badge">${item.number}</span></td>
           <td class="plan-col-category">${escapeHtml(item.category || "")}</td>
           <td class="plan-col-title">${escapeHtml(item.title || "")}</td>
           <td class="plan-col-owner">${escapeHtml(item.owner || "")}</td>
@@ -726,7 +726,7 @@ async function exportAsImageJpg() {
     const ratio = logo.width > 0 ? logo.height / logo.width : 1;
     logoHeight = maxLogoHeight;
     logoWidth = Math.round(maxLogoHeight / Math.max(ratio, 0.0001));
-    ctx.drawImage(logo, side, side - 8, logoWidth, logoHeight);
+    ctx.drawImage(logo, width - side - logoWidth, side - 8, logoWidth, logoHeight);
   } catch (_error) {
     // Continue without logo if image load fails.
     logoWidth = 0;
@@ -734,7 +734,7 @@ async function exportAsImageJpg() {
   }
 
   ctx.fillStyle = "#1a1a1a";
-  const headerTextX = side + (logoWidth > 0 ? logoWidth + 22 : 0);
+  const headerTextX = side;
   let y = side + 6;
   ctx.font = "700 52px Arial, sans-serif";
   ctx.fillText(`Gudstjänstordning ${plan.dateLabel}`, headerTextX, y);
@@ -769,24 +769,32 @@ async function exportAsImageJpg() {
     y += 44;
   } else {
     for (const person of plan.responsibles) {
-      ctx.fillText(`${person.role}: ${person.name}`, side, y);
+      const roleText = `${person.role}:`;
+      ctx.font = "700 28px Arial, sans-serif";
+      ctx.fillStyle = "#1a1a1a";
+      ctx.fillText(roleText, side, y);
+      const roleWidth = ctx.measureText(roleText).width;
+      ctx.font = "500 28px Arial, sans-serif";
+      ctx.fillText(` ${person.name}`, side + roleWidth + 2, y);
       y += 40;
     }
   }
 
-  y += 10;
+  y += 24;
   ctx.font = "700 34px Arial, sans-serif";
   ctx.fillText("Ordning", side, y);
   y += 24;
 
   const rowX = side;
   const border = "#d6dcc9";
-  const drawCellText = (text, x, top, maxWidth) => {
-    const lines = wrapText(text, maxWidth, "500 26px Arial, sans-serif");
-    ctx.font = "500 26px Arial, sans-serif";
-    ctx.fillStyle = "#1a1a1a";
+  const drawCellText = (text, x, top, maxWidth, rowHeight, font = "500 26px Arial, sans-serif", color = "#1a1a1a") => {
+    const lines = wrapText(text, maxWidth, font);
+    ctx.font = font;
+    ctx.fillStyle = color;
+    const textBlockHeight = lines.length * lineHeight;
+    const firstLineY = top + (rowHeight - textBlockHeight) / 2 + 26;
     lines.forEach((line, idx) => {
-      ctx.fillText(line, x, top + 32 + idx * lineHeight);
+      ctx.fillText(line, x, firstLineY + idx * lineHeight);
     });
     return lines.length;
   };
@@ -797,14 +805,22 @@ async function exportAsImageJpg() {
     ctx.fillText("Inga mötespunkter inlagda.", side, y);
   } else {
     let rowTop = y + 12;
-    for (const item of plan.agenda) {
+    for (const [rowIndex, item] of plan.agenda.entries()) {
       const linesCat = wrapText(item.category || "", colWidths[1] - 16, "500 26px Arial, sans-serif").length;
       const linesTitle = wrapText(item.title || "", colWidths[2] - 16, "500 26px Arial, sans-serif").length;
       const linesOwner = wrapText(item.owner || "", colWidths[3] - 16, "500 26px Arial, sans-serif").length;
       const maxLines = Math.max(1, linesCat, linesTitle, linesOwner);
       const rowHeight = Math.max(52, 20 + maxLines * lineHeight);
+      const rowFill = rowIndex % 2 === 0 ? "#fbfbfa" : "#f1f3ef";
 
       let cellX = rowX;
+      ctx.fillStyle = rowFill;
+      for (const colWidth of colWidths) {
+        ctx.fillRect(cellX, rowTop, colWidth, rowHeight);
+        cellX += colWidth;
+      }
+
+      cellX = rowX;
       ctx.strokeStyle = border;
       ctx.lineWidth = 2;
       for (const colWidth of colWidths) {
@@ -812,12 +828,25 @@ async function exportAsImageJpg() {
         cellX += colWidth;
       }
 
-      ctx.font = "600 26px Arial, sans-serif";
+      const badgeSize = 38;
+      const badgeX = rowX + colWidths[0] / 2;
+      const badgeY = rowTop + rowHeight / 2;
+      ctx.beginPath();
+      ctx.arc(badgeX, badgeY, badgeSize / 2, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(255,255,255,0.7)";
+      ctx.fill();
+      ctx.strokeStyle = "#c8d0c0";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      ctx.font = "700 22px Arial, sans-serif";
       ctx.fillStyle = "#1a1a1a";
-      ctx.fillText(String(item.number), rowX + 14, rowTop + 32);
-      drawCellText(item.category || "", rowX + colWidths[0] + 8, rowTop, colWidths[1] - 16);
-      drawCellText(item.title || "", rowX + colWidths[0] + colWidths[1] + 8, rowTop, colWidths[2] - 16);
-      drawCellText(item.owner || "", rowX + colWidths[0] + colWidths[1] + colWidths[2] + 8, rowTop, colWidths[3] - 16);
+      const numberText = String(item.number);
+      const numWidth = ctx.measureText(numberText).width;
+      ctx.fillText(numberText, badgeX - numWidth / 2, badgeY + 7);
+      drawCellText(item.category || "", rowX + colWidths[0] + 8, rowTop, colWidths[1] - 16, rowHeight, "500 26px Arial, sans-serif", "#1a1a1a");
+      drawCellText(item.title || "", rowX + colWidths[0] + colWidths[1] + 8, rowTop, colWidths[2] - 16, rowHeight, "700 26px Arial, sans-serif", "#1a1a1a");
+      drawCellText(item.owner || "", rowX + colWidths[0] + colWidths[1] + colWidths[2] + 8, rowTop, colWidths[3] - 16, rowHeight, "500 26px Arial, sans-serif", "#1a1a1a");
 
       rowTop += rowHeight;
     }

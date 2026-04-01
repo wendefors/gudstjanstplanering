@@ -50,8 +50,9 @@
 
       header {
         display: flex;
-        gap: 12px;
-        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        align-items: flex-start;
         border-bottom: 2px solid #8daf3f;
         padding-bottom: 10px;
         margin-bottom: 14px;
@@ -86,35 +87,79 @@
         gap: 4px;
       }
 
+      .people-lines strong {
+        font-weight: 700;
+      }
+
       .plan-table {
         width: 100%;
-        border-collapse: collapse;
-        margin-top: 6px;
+        border-collapse: separate;
+        border-spacing: 0 6px;
+        margin-top: 8px;
         table-layout: fixed;
       }
 
       .plan-table td {
-        border: 1px solid #d6dcc9;
-        padding: 6px 7px;
-        vertical-align: top;
+        border: 0;
+        padding: 7px 8px;
+        vertical-align: middle;
         word-wrap: break-word;
+        font-size: 15px;
+        line-height: 1.28;
+        background: #fbfbfa;
+      }
+
+      .plan-table tbody tr:nth-child(even) td {
+        background: #f1f3ef;
       }
 
       .plan-col-num {
         width: 8%;
         text-align: center;
+        padding: 6px 5px;
+        border: 1px solid #d6dcc9;
+        border-right: 0;
+        border-radius: 10px 0 0 10px;
       }
 
       .plan-col-category {
         width: 24%;
+        color: #1a1a1a;
+        border-top: 1px solid #d6dcc9;
+        border-bottom: 1px solid #d6dcc9;
       }
 
       .plan-col-title {
         width: 44%;
+        font-weight: 700;
+        border-top: 1px solid #d6dcc9;
+        border-bottom: 1px solid #d6dcc9;
       }
 
       .plan-col-owner {
         width: 24%;
+        color: #1a1a1a;
+        border-top: 1px solid #d6dcc9;
+        border-right: 1px solid #d6dcc9;
+        border-bottom: 1px solid #d6dcc9;
+        border-radius: 0 10px 10px 0;
+      }
+
+      .plan-num-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 1.75rem;
+        height: 1.75rem;
+        border-radius: 999px;
+        border: 1px solid #c8d0c0;
+        background: rgba(255, 255, 255, 0.7);
+        color: #1a1a1a;
+        font-weight: 700;
+      }
+
+      .order-title {
+        margin-top: 18px;
       }
 
       @media print {
@@ -181,7 +226,7 @@
             .map(
               (item) => `
                 <tr>
-                  <td class="plan-col-num">${item.number || ""}</td>
+                  <td class="plan-col-num"><span class="plan-num-badge">${item.number || ""}</span></td>
                   <td class="plan-col-category">${escapeHtml(item.category || "")}</td>
                   <td class="plan-col-title">${escapeHtml(item.title || "")}</td>
                   <td class="plan-col-owner">${escapeHtml(item.owner || "")}</td>
@@ -192,18 +237,18 @@
 
           root.innerHTML = `
             <header>
-              <img src="${data.logoPath}" alt="Logo" />
               <div>
                 <h1>Gudstjänstordning ${escapeHtml(data.dateLabel || "")}</h1>
                 <p>Mötesledare: ${escapeHtml(data.meetingLeader || "Ej satt")}</p>
                 ${data.theme ? `<p>Tema: ${escapeHtml(data.theme)}</p>` : ""}
               </div>
+              <img src="${data.logoPath}" alt="Logo" />
             </header>
 
             <h2>Ansvariga</h2>
             <div class="people-lines">${responsibles || "<div>Inga ansvariga ifyllda.</div>"}</div>
 
-            <h2>Ordning</h2>
+            <h2 class="order-title">Ordning</h2>
             ${
               agendaRows
                 ? `<table class="plan-table"><tbody>${agendaRows}</tbody></table>`

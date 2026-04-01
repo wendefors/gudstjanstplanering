@@ -206,34 +206,74 @@ button.secondary:hover {
 
 .plan-table {
   width: 100%;
-  border-collapse: collapse;
-  margin-top: 0.45rem;
+  border-collapse: separate;
+  border-spacing: 0 0.36rem;
+  margin-top: 0.55rem;
   table-layout: fixed;
 }
 
 .plan-table td {
-  border: 1px solid #d6dcc9;
-  padding: 0.42rem 0.45rem;
-  vertical-align: top;
+  border: 0;
+  padding: 0.52rem 0.58rem;
+  vertical-align: middle;
   word-wrap: break-word;
+  font-size: 0.95rem;
+  line-height: 1.28;
+  background: #fbfbfa;
+}
+
+.plan-table tbody tr:nth-child(even) td {
+  background: #f1f3ef;
+}
+
+.plan-table tbody tr:hover td {
+  background: #e8ece6;
 }
 
 .plan-col-num {
   width: 8%;
   text-align: center;
   white-space: nowrap;
+  padding: 0.42rem 0.3rem;
+  border: 1px solid #d6dcc9;
+  border-right: 0;
+  border-radius: 10px 0 0 10px;
 }
 
 .plan-col-category {
   width: 24%;
+  color: #1a1a1a;
+  border-top: 1px solid #d6dcc9;
+  border-bottom: 1px solid #d6dcc9;
 }
 
 .plan-col-title {
   width: 44%;
+  font-weight: 600;
+  border-top: 1px solid #d6dcc9;
+  border-bottom: 1px solid #d6dcc9;
 }
 
 .plan-col-owner {
   width: 24%;
+  color: #1a1a1a;
+  border-top: 1px solid #d6dcc9;
+  border-right: 1px solid #d6dcc9;
+  border-bottom: 1px solid #d6dcc9;
+  border-radius: 0 10px 10px 0;
+}
+
+.plan-num-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.8rem;
+  height: 1.8rem;
+  border-radius: 999px;
+  border: 1px solid #c8d0c0;
+  background: rgba(255, 255, 255, 0.7);
+  color: #1a1a1a;
+  font-weight: 700;
 }
 
 .people-lines {
