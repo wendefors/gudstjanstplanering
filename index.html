@@ -111,8 +111,12 @@
     <script>
       // Sätt denna i produktion (GitHub Pages) till din Supabase Edge Function-URL.
       // Exempel: window.SERVICE_GROUP_API_URL = "https://<project-ref>.functions.supabase.co/service-group";
-      window.SERVICE_GROUP_API_URL = "https://ejymotvpbhrpzpblfwon.functions.supabase.co/service-group";
+      const host = String(window.location.hostname || "").toLowerCase();
+      const isGithubPages = host.endsWith(".github.io");
+      window.SERVICE_GROUP_API_URL = isGithubPages
+        ? "https://ejymotvpbhrpzpblfwon.functions.supabase.co/service-group"
+        : "";
     </script>
-    <script src="app.js?v=20260401b" defer></script>
+    <script src="app.js?v=20260401f" defer></script>
   </body>
 </html>

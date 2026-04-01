@@ -28,6 +28,8 @@ function createDefaultAgenda() {
   ];
 }
 
+const defaultAgendaOwnerTitles = new Set(["välkommen till gudstjänst", "pålysningar"]);
+
 let state = loadState();
 
 const el = {
@@ -424,6 +426,27 @@ function setResponsibleAssignments(assignments) {
   return appliedRoles;
 }
 
+function applyMeetingLeaderToDefaultAgendaOwners(newMeetingLeader, previousMeetingLeader = "") {
+  const newInitials = getInitialsFromName(newMeetingLeader);
+  const prevInitials = getInitialsFromName(previousMeetingLeader);
+  if (!newInitials) return false;
+
+  let changed = false;
+  for (const item of state.agenda) {
+    if (!item || item.type !== "custom") continue;
+    const titleKey = String(item.title || "").trim().toLowerCase();
+    if (!defaultAgendaOwnerTitles.has(titleKey)) continue;
+
+    const currentOwner = String(item.owner || "").trim();
+    if (!currentOwner || currentOwner === prevInitials) {
+      item.owner = newInitials;
+      changed = true;
+    }
+  }
+
+  return changed;
+}
+
 async function syncServiceGroupResponsibleFromCalendar(dateIso) {
   const targetDate = String(dateIso || "").trim();
   if (!isValidIsoDate(targetDate)) {
@@ -442,13 +465,26 @@ async function syncServiceGroupResponsibleFromCalendar(dateIso) {
       return;
     }
 
-    if (!data.found) {
-      return;
+    const appliedRoles = setResponsibleAssignments(data.assignments || {});
+    let meetingLeaderChanged = false;
+    let defaultAgendaOwnersChanged = false;
+
+    if (typeof data.meetingLeader === "string" && data.meetingLeader.trim()) {
+      const previousMeetingLeader = state.meetingLeader;
+      const nextMeetingLeader = data.meetingLeader.trim();
+      if (nextMeetingLeader !== previousMeetingLeader) {
+        state.meetingLeader = nextMeetingLeader;
+        el.meetingLeader.value = nextMeetingLeader;
+        meetingLeaderChanged = true;
+      }
+      defaultAgendaOwnersChanged = applyMeetingLeaderToDefaultAgendaOwners(nextMeetingLeader, previousMeetingLeader);
     }
 
-    const appliedRoles = setResponsibleAssignments(data.assignments || {});
-    if (appliedRoles.length) {
+    if (appliedRoles.length || meetingLeaderChanged || defaultAgendaOwnersChanged) {
       renderResponsible();
+      if (defaultAgendaOwnersChanged) {
+        renderAgenda();
+      }
       renderPreview();
     }
   } catch (_error) {

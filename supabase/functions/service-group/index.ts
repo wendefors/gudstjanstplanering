@@ -341,11 +341,12 @@ function parseRoleAssignmentsFromDescription(description: string) {
     Predikan: "Predikant",
     Psalmer: "Organist",
     "Psalmer och sånger": "Organist",
-    Förebedjare: "Förebedjare"
+    Förebedjare: "Förebedjare",
+    Ledning: "Mötesledare"
   };
 
   const normalizedText = text.replace(/\r/g, "");
-  const lineRegex = /^\s*(Predikan|Psalmer(?:\s+och\s+sånger)?|Förebedjare)\s*[:\-]\s*(.+?)\s*$/i;
+  const lineRegex = /^\s*(Predikan|Psalmer(?:\s+och\s+sånger)?|Förebedjare|Ledning)\s*[:\-]\s*(.+?)\s*$/i;
   const lines = normalizedText
     .split(/\n+/)
     .map((line) => line.trim())
@@ -420,6 +421,7 @@ Deno.serve(async (req) => {
 
   try {
     const assignments: Record<string, string> = {};
+    let meetingLeader = "";
     const sourceSummaries: string[] = [];
     const debugEvents: Array<Record<string, string | Record<string, string>>> = [];
 
@@ -468,6 +470,12 @@ Deno.serve(async (req) => {
         const summaryText = String(candidate.event.summary || "").trim();
         sourceSummaries.push(`${source.name} anteckning: ${summaryText || "(utan rubrik)"}`);
         for (const [roleName, person] of Object.entries(candidate.parsedDescription)) {
+          if (roleName === "Mötesledare") {
+            if (!meetingLeader) {
+              meetingLeader = person;
+            }
+            continue;
+          }
           if (!assignments[roleName]) {
             assignments[roleName] = person;
           }
@@ -498,15 +506,23 @@ Deno.serve(async (req) => {
           eventCount: debugEvents.length,
           events: debugEvents,
           sourceSummaries,
-          assignments
+          assignments,
+          meetingLeader
         },
         200,
         origin
       );
     }
 
-    if (!Object.keys(assignments).length) {
-      return jsonResponse({ ok: true, found: false, serviceGroupResponsible: "", assignments: {} }, 200, origin);
+    const hasAssignments = Object.keys(assignments).length > 0;
+    const hasMeetingLeader = Boolean(String(meetingLeader || "").trim());
+
+    if (!hasAssignments && !hasMeetingLeader) {
+      return jsonResponse(
+        { ok: true, found: false, serviceGroupResponsible: "", assignments: {}, meetingLeader: meetingLeader || "" },
+        200,
+        origin
+      );
     }
 
     return jsonResponse(
@@ -515,7 +531,8 @@ Deno.serve(async (req) => {
         found: true,
         serviceGroupResponsible: assignments.Servicegruppansvarig || "",
         assignments,
-        sourceSummaries
+        sourceSummaries,
+        meetingLeader: meetingLeader || ""
       },
       200,
       origin

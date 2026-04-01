@@ -166,11 +166,12 @@ function parseRoleAssignmentsFromDescription(description) {
     Predikan: "Predikant",
     Psalmer: "Organist",
     "Psalmer och sånger": "Organist",
-    Förebedjare: "Förebedjare"
+    Förebedjare: "Förebedjare",
+    Ledning: "Mötesledare"
   };
 
   const normalizedText = text.replace(/\r/g, "");
-  const lineRegex = /^\s*(Predikan|Psalmer(?:\s+och\s+sånger)?|Förebedjare)\s*[:\-]\s*(.+?)\s*$/i;
+  const lineRegex = /^\s*(Predikan|Psalmer(?:\s+och\s+sånger)?|Förebedjare|Ledning)\s*[:\-]\s*(.+?)\s*$/i;
   const lines = normalizedText
     .split(/\n+/)
     .map((line) => line.trim())
@@ -463,6 +464,7 @@ async function handleServiceGroupApi(urlObj, res) {
 
   try {
     const assignments = {};
+    let meetingLeader = "";
     const sourceSummaries = [];
     const sources = [{ name: "primär", url: ICS_URL }];
     if (SECONDARY_ICS_URL && SECONDARY_ICS_URL !== ICS_URL) {
@@ -507,6 +509,12 @@ async function handleServiceGroupApi(urlObj, res) {
         const summaryText = String(candidate.event.summary || "").trim();
         sourceSummaries.push(`${source.name} anteckning: ${summaryText || "(utan rubrik)"}`);
         for (const [roleName, person] of Object.entries(candidate.parsedDescription)) {
+          if (roleName === "Mötesledare") {
+            if (!meetingLeader) {
+              meetingLeader = person;
+            }
+            continue;
+          }
           if (!assignments[roleName]) {
             assignments[roleName] = person;
           }
@@ -514,8 +522,11 @@ async function handleServiceGroupApi(urlObj, res) {
       }
     }
 
-    if (!Object.keys(assignments).length) {
-      sendJson(res, 200, { ok: true, found: false, serviceGroupResponsible: "", assignments: {} });
+    const hasAssignments = Object.keys(assignments).length > 0;
+    const hasMeetingLeader = Boolean(String(meetingLeader || "").trim());
+
+    if (!hasAssignments && !hasMeetingLeader) {
+      sendJson(res, 200, { ok: true, found: false, serviceGroupResponsible: "", assignments: {}, meetingLeader });
       return;
     }
 
@@ -525,7 +536,8 @@ async function handleServiceGroupApi(urlObj, res) {
       found: true,
       serviceGroupResponsible,
       assignments,
-      sourceSummaries
+      sourceSummaries,
+      meetingLeader
     });
   } catch (error) {
     sendJson(res, 500, {
