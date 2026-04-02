@@ -52,6 +52,7 @@ const el = {
   preview: document.querySelector("#livePreview"),
   liveHeading: document.querySelector("#liveHeading"),
   actionsHeading: document.querySelector("#actionsHeading"),
+  fetchCalendarBtn: document.querySelector("#fetchCalendarBtn"),
   pdfBtn: document.querySelector("#pdfBtn"),
   imageBtn: document.querySelector("#imageBtn"),
   readLinkBtn: document.querySelector("#readLinkBtn"),
@@ -71,7 +72,6 @@ async function init() {
   renderAgenda();
   renderPreview();
   if (!isReadOnlyMode) {
-    syncServiceGroupResponsibleFromCalendar(el.serviceDate.value || state.date);
     queueSaveState();
   } else {
     applyReadOnlyMode();
@@ -118,9 +118,14 @@ function wireActions() {
       renderAgenda();
       renderPreview();
     });
+
+    el.fetchCalendarBtn.addEventListener("click", () => {
+      syncServiceGroupResponsibleFromCalendar(el.serviceDate.value || state.date);
+    });
   } else {
     el.addResponsible.hidden = true;
     el.addAgendaItem.hidden = true;
+    if (el.fetchCalendarBtn) el.fetchCalendarBtn.hidden = true;
   }
 
   el.pdfBtn.addEventListener("click", () => openPrintPage(true));
@@ -1104,7 +1109,6 @@ async function openPlanByDate(dateIso) {
     state.date = targetDate;
     el.serviceDate.value = targetDate;
     renderPreview();
-    syncServiceGroupResponsibleFromCalendar(targetDate);
     return;
   }
 
@@ -1135,7 +1139,6 @@ async function openPlanByDate(dateIso) {
   renderResponsible();
   renderAgenda();
   renderPreview();
-  syncServiceGroupResponsibleFromCalendar(targetDate);
 }
 
 async function refreshReadOnlyPlan() {
@@ -1245,16 +1248,22 @@ function resetAllData() {
   const confirmed = window.confirm("Skapa ny gudstjänstordning och återställ till standardschemat?");
   if (!confirmed) return;
 
+  const selectedDate = String(el.serviceDate.value || state.date || "").trim();
+  const targetDate = isValidIsoDate(selectedDate) ? selectedDate : state.date;
   currentPlanId = "";
   currentShareToken = "";
   state = createDefaultState();
+  state.date = targetDate;
   el.serviceDate.value = state.date;
   el.meetingLeader.value = state.meetingLeader;
   el.serviceTheme.value = state.theme;
+  const url = new URL(window.location.href);
+  url.searchParams.delete("plan");
+  url.searchParams.delete("read");
+  window.history.replaceState({}, "", url.toString());
   renderResponsible();
   renderAgenda();
   renderPreview();
-  syncServiceGroupResponsibleFromCalendar(state.date);
 }
 
 function getNextSundayDateISO() {

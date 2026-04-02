@@ -90,6 +90,10 @@ p {
   gap: 0.75rem;
 }
 
+.basic-actions {
+  margin-top: 0.75rem;
+}
+
 label,
 .row {
   display: grid;
