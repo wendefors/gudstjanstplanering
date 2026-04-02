@@ -191,6 +191,13 @@ button.secondary:hover {
   font-size: 0.92rem;
 }
 
+.checklist-list {
+  margin: 0;
+  padding-left: 1.25rem;
+  display: grid;
+  gap: 0.3rem;
+}
+
 .preview {
   border: 1px dashed var(--border);
   border-radius: 10px;
@@ -288,6 +295,7 @@ button.secondary:hover {
 
 body.read-only-mode #cardBasicInfo,
 body.read-only-mode #cardResponsibles,
+body.read-only-mode #cardChecklist,
 body.read-only-mode #cardAgenda {
   display: none;
 }

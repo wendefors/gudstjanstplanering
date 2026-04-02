@@ -108,14 +108,7 @@ function wireTopFields() {
 function wireActions() {
   if (!isReadOnlyMode) {
     el.addResponsible.addEventListener("click", () => {
-      state.responsible.push({
-        role: "",
-        name: "",
-        email: "",
-        locked: false,
-        nameManuallyEdited: false,
-        lastCalendarName: ""
-      });
+      state.responsible.push({ role: "", name: "", email: "", locked: false });
       renderResponsible();
       renderPreview();
     });
@@ -194,18 +187,11 @@ function renderResponsible() {
     if (!isReadOnlyMode) {
       role.addEventListener("input", (event) => {
         state.responsible[index].role = event.target.value;
-        state.responsible[index].nameManuallyEdited = false;
         renderPreview();
       });
 
       name.addEventListener("input", (event) => {
         state.responsible[index].name = event.target.value;
-        state.responsible[index].nameManuallyEdited = true;
-        renderPreview();
-      });
-      name.addEventListener("change", (event) => {
-        state.responsible[index].name = event.target.value;
-        state.responsible[index].nameManuallyEdited = true;
         renderPreview();
       });
 
@@ -498,25 +484,10 @@ function getInitialsForRole(roleName) {
   return getInitialsFromName(person.name);
 }
 
-function setResponsibleNameByRole(roleName, fullName, options = {}) {
+function setResponsibleNameByRole(roleName, fullName) {
   const index = state.responsible.findIndex((entry) => entry.role === roleName);
   if (index < 0) return false;
-  const currentName = String(state.responsible[index].name || "").trim();
-  const lastCalendarName = String(state.responsible[index].lastCalendarName || "").trim();
-  const nextName = String(fullName || "").trim();
-  const source = options.source === "manual" ? "manual" : "calendar";
-  if (
-    source === "calendar" &&
-    (state.responsible[index].nameManuallyEdited || (currentName && currentName !== lastCalendarName))
-  ) {
-    return false;
-  }
-
-  state.responsible[index].name = nextName;
-  state.responsible[index].nameManuallyEdited = source === "manual";
-  if (source === "calendar") {
-    state.responsible[index].lastCalendarName = nextName;
-  }
+  state.responsible[index].name = String(fullName || "").trim();
   return true;
 }
 
@@ -525,7 +496,7 @@ function setResponsibleAssignments(assignments) {
   for (const [roleName, person] of Object.entries(assignments || {})) {
     const value = String(person || "").trim();
     if (!value) continue;
-    const updated = setResponsibleNameByRole(roleName, value, { source: "calendar" });
+    const updated = setResponsibleNameByRole(roleName, value);
     if (updated) {
       appliedRoles.push(roleName);
     }
@@ -1192,9 +1163,7 @@ async function persistState() {
         role: item.role,
         name: item.name,
         email: item.email,
-        locked: Boolean(item.locked),
-        nameManuallyEdited: Boolean(item.nameManuallyEdited),
-        lastCalendarName: typeof item.lastCalendarName === "string" ? item.lastCalendarName : ""
+        locked: Boolean(item.locked)
       })),
       agenda: state.agenda.map((item) => ({ ...item }))
     }
@@ -1231,9 +1200,7 @@ function createDefaultState() {
       role,
       name: "",
       email: "",
-      locked: true,
-      nameManuallyEdited: false,
-      lastCalendarName: ""
+      locked: true
     })),
     agenda: createDefaultAgenda()
   };
@@ -1250,16 +1217,7 @@ function normalizeLoadedState(rawState) {
       role,
       name: typeof existing.name === "string" ? existing.name : "",
       email: typeof existing.email === "string" ? existing.email : "",
-      locked: true,
-      nameManuallyEdited: Boolean(existing.nameManuallyEdited),
-      lastCalendarName:
-        typeof existing.lastCalendarName === "string"
-          ? existing.lastCalendarName
-          : Boolean(existing.nameManuallyEdited)
-            ? ""
-            : typeof existing.name === "string"
-              ? existing.name
-              : ""
+      locked: true
     };
   });
 
@@ -1269,16 +1227,7 @@ function normalizeLoadedState(rawState) {
       role: String(entry.role),
       name: typeof entry.name === "string" ? entry.name : "",
       email: typeof entry.email === "string" ? entry.email : "",
-      locked: Boolean(entry.locked),
-      nameManuallyEdited: Boolean(entry.nameManuallyEdited),
-      lastCalendarName:
-        typeof entry.lastCalendarName === "string"
-          ? entry.lastCalendarName
-          : Boolean(entry.nameManuallyEdited)
-            ? ""
-            : typeof entry.name === "string"
-              ? entry.name
-              : ""
+      locked: Boolean(entry.locked)
     });
   });
 
