@@ -154,8 +154,7 @@ async function upsertPlan(id: string | null, plan: any) {
       .update({
         service_date: serviceDate,
         payload: normalized,
-        share_expires_at: shareExpiresAt,
-        updated_at: new Date().toISOString()
+        share_expires_at: shareExpiresAt
       })
       .eq("id", id)
       .select("id,share_token,share_expires_at,payload")
@@ -170,8 +169,7 @@ async function upsertPlan(id: string | null, plan: any) {
       .from("plans")
       .update({
         payload: normalized,
-        share_expires_at: shareExpiresAt,
-        updated_at: new Date().toISOString()
+        share_expires_at: shareExpiresAt
       })
       .eq("id", existingByDate.id)
       .select("id,share_token,share_expires_at,payload")
