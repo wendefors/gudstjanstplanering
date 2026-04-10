@@ -90,6 +90,12 @@ p {
   gap: 0.75rem;
 }
 
+#serviceDate {
+  inline-size: 100%;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+}
+
 .basic-actions {
   margin-top: 0.75rem;
 }
@@ -362,6 +368,17 @@ body.read-only-mode #cardAgenda {
   align-items: center;
   justify-content: center;
   white-space: nowrap;
+}
+
+/* iPad/tablet safeguard: avoid date input overlap in Grundinfo. */
+@media (pointer: coarse) and (max-width: 1400px) {
+  #cardBasicInfo .grid.three {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  #cardBasicInfo .grid.three > label:first-child {
+    grid-column: 1 / -1;
+  }
 }
 
 @media (max-width: 840px) {
