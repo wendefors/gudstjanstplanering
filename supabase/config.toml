@@ -3,3 +3,6 @@ verify_jwt = false
 
 [functions.plans]
 verify_jwt = false
+
+[functions.address-book]
+verify_jwt = false

@@ -4,9 +4,11 @@ const STORAGE_KEY = "gudstjanstplanering.v1";
 let serviceGroupFetchSeq = 0;
 const SERVICE_GROUP_API_URL = String(window.SERVICE_GROUP_API_URL || "").trim();
 const PLANS_API_URL = String(window.PLANS_API_URL || "").trim();
+const ADDRESS_BOOK_API_URL = String(window.ADDRESS_BOOK_API_URL || "").trim();
 const urlParams = new URLSearchParams(window.location.search);
 const readTokenParam = String(urlParams.get("read") || "").trim();
 const planIdParam = String(urlParams.get("plan") || "").trim();
+const adminTokenParam = String(urlParams.get("admin") || "").trim();
 const bibleBookChapterCounts = [
   50, 40, 27, 36, 34, 24, 21, 4, 31, 24, 22, 25, 29, 36, 10, 13, 10, 42, 150, 31, 12, 8, 66, 52, 5, 48, 12, 14, 3,
   9, 1, 4, 7, 3, 3, 3, 2, 14, 4, 28, 16, 24, 21, 28, 16, 16, 13, 6, 6, 4, 4, 5, 3, 6, 4, 3, 1, 13, 5, 5, 3, 5, 1,
@@ -40,12 +42,15 @@ let saveTimer = null;
 let isReadOnlyMode = Boolean(readTokenParam);
 let state = createDefaultState();
 let activeAgendaNoteIndex = -1;
+let addressLookupTimer = null;
 
 const el = {
   serviceDate: document.querySelector("#serviceDate"),
   meetingLeader: document.querySelector("#meetingLeader"),
   serviceTheme: document.querySelector("#serviceTheme"),
   responsibleList: document.querySelector("#responsibleList"),
+  addressAdminCard: document.querySelector("#cardAddressAdmin"),
+  addressSuggestionList: document.querySelector("#addressSuggestionList"),
   agendaList: document.querySelector("#agendaList"),
   addResponsible: document.querySelector("#addResponsible"),
   addAgendaItem: document.querySelector("#addAgendaItem"),
@@ -81,6 +86,10 @@ async function init() {
   renderPreview();
   if (!isReadOnlyMode) {
     queueSaveState();
+    refreshResponsibleEmailStatuses();
+    if (adminTokenParam) {
+      loadAddressSuggestions();
+    }
   } else {
     applyReadOnlyMode();
     window.setInterval(() => {
@@ -181,26 +190,60 @@ async function copyReadLink() {
       return;
     }
 
-    const url = new URL(window.location.href);
-    url.searchParams.delete("plan");
-    url.searchParams.set("read", currentShareToken);
-    const readUrl = url.toString();
+    const readUrl = buildReadUrl();
 
     try {
-      if (!navigator.clipboard?.writeText) {
-        throw new Error("Clipboard saknas.");
-      }
-      await navigator.clipboard.writeText(readUrl);
-      window.alert("Läslänk kopierad.");
+      await copyTextToClipboard(readUrl);
+      el.readLinkBtn.textContent = "Läslänk kopierad!";
+      window.setTimeout(() => {
+        if (!el.readLinkBtn.disabled) {
+          el.readLinkBtn.textContent = originalText;
+        }
+      }, 2500);
     } catch (_error) {
       window.prompt("Kopiera läslänken:", readUrl);
+      el.readLinkBtn.textContent = originalText;
     }
   } catch (_error) {
     window.alert("Kunde inte skapa läslänk. Kontrollera nätverket och försök igen.");
+    el.readLinkBtn.textContent = originalText;
   } finally {
     el.readLinkBtn.disabled = false;
-    el.readLinkBtn.textContent = originalText;
   }
+}
+
+async function copyTextToClipboard(text) {
+  if (navigator.clipboard?.writeText && window.isSecureContext) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.top = "0";
+  textarea.style.left = "-9999px";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  textarea.setSelectionRange(0, textarea.value.length);
+
+  try {
+    const copied = document.execCommand("copy");
+    if (!copied) throw new Error("Kopiering misslyckades.");
+  } finally {
+    textarea.remove();
+  }
+}
+
+function buildReadUrl() {
+  const url = new URL(window.location.href);
+  url.searchParams.delete("admin");
+  url.searchParams.delete("plan");
+  url.searchParams.set("read", currentShareToken);
+  return url.toString();
 }
 
 function renderResponsible() {
@@ -211,17 +254,32 @@ function renderResponsible() {
     const role = node.querySelector('[data-field="role"]');
     const name = node.querySelector('[data-field="name"]');
     const email = node.querySelector('[data-field="email"]');
+    const emailStatus = node.querySelector('[data-field="emailStatus"]');
+    const suggestEmail = node.querySelector('[data-action="suggestEmail"]');
     const remove = node.querySelector('[data-remove="responsible"]');
+    const emailIsFound = person.emailLookupStatus === "found";
 
     role.value = person.role;
     role.readOnly = Boolean(person.locked || isReadOnlyMode);
     name.readOnly = isReadOnlyMode;
-    email.readOnly = isReadOnlyMode;
+    email.readOnly = Boolean(isReadOnlyMode || emailIsFound);
     role.classList.toggle("readonly", Boolean(person.locked));
     name.value = person.name;
-    email.value = person.email;
+    email.value = emailIsFound ? "" : person.email;
+    email.placeholder = getEmailPlaceholder(person);
+    email.classList.toggle("readonly", emailIsFound);
+    emailStatus.textContent = person.emailSuggestionSent ? "Förslag skickat" : "";
 
     remove.hidden = Boolean(person.locked || isReadOnlyMode);
+    const shouldHideSuggestEmail = Boolean(
+      isReadOnlyMode ||
+        emailIsFound ||
+        person.emailSuggestionSent ||
+        !String(person.name || "").trim() ||
+        !isValidEmail(person.email)
+    );
+    suggestEmail.hidden = shouldHideSuggestEmail;
+    suggestEmail.classList.toggle("hidden", shouldHideSuggestEmail);
 
     if (!isReadOnlyMode) {
       role.addEventListener("input", (event) => {
@@ -231,12 +289,29 @@ function renderResponsible() {
 
       name.addEventListener("input", (event) => {
         state.responsible[index].name = event.target.value;
+        state.responsible[index].emailLookupStatus = "";
+        state.responsible[index].emailSuggestionSent = false;
+        scheduleResponsibleEmailLookup();
         renderPreview();
       });
 
       email.addEventListener("input", (event) => {
         state.responsible[index].email = event.target.value;
+        state.responsible[index].emailSuggestionSent = false;
+        const shouldHideButton = Boolean(
+          state.responsible[index].emailLookupStatus === "found" ||
+            !String(state.responsible[index].name || "").trim() ||
+            !isValidEmail(state.responsible[index].email)
+        );
+        suggestEmail.hidden = shouldHideButton;
+        suggestEmail.classList.toggle("hidden", shouldHideButton);
+        email.placeholder = getEmailPlaceholder(state.responsible[index]);
+        emailStatus.textContent = state.responsible[index].emailSuggestionSent ? "Förslag skickat" : "";
         saveState();
+      });
+
+      suggestEmail.addEventListener("click", () => {
+        suggestResponsibleEmail(index);
       });
 
       remove.addEventListener("click", () => {
@@ -657,6 +732,7 @@ async function syncServiceGroupResponsibleFromCalendar(dateIso) {
 
     if (appliedRoles.length || meetingLeaderChanged || defaultAgendaOwnersChanged) {
       renderResponsible();
+      refreshResponsibleEmailStatuses();
       if (defaultAgendaOwnersChanged) {
         renderAgenda();
       }
@@ -688,6 +764,167 @@ function getInitialsFromName(name) {
     .filter(Boolean)
     .map((word) => word[0]?.toUpperCase() || "")
     .join("");
+}
+
+function getEmailStatusText(person) {
+  if (!String(person.name || "").trim()) return "";
+  if (person.emailSuggestionSent) return "Förslag skickat";
+  if (person.emailLookupStatus === "found") return "E-post hämtad";
+  if (isValidEmail(person.email)) return "Manuell e-post";
+  if (person.emailLookupStatus === "missing") return "Saknar e-post";
+  if (person.emailLookupStatus === "complex") return "Kontrollera e-post manuellt";
+  return "";
+}
+
+function getEmailPlaceholder(person) {
+  const status = getEmailStatusText(person);
+  return status || "E-post";
+}
+
+function isValidEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
+}
+
+function scheduleResponsibleEmailLookup() {
+  if (addressLookupTimer) clearTimeout(addressLookupTimer);
+  addressLookupTimer = setTimeout(() => {
+    refreshResponsibleEmailStatuses();
+  }, 450);
+}
+
+async function callAddressBook(action, payload = {}) {
+  if (!ADDRESS_BOOK_API_URL) throw new Error("Address book endpoint saknas.");
+  const response = await fetch(ADDRESS_BOOK_API_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(adminTokenParam ? { "x-admin-token": adminTokenParam } : {})
+    },
+    body: JSON.stringify({ action, ...payload })
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || !data?.ok) {
+    throw new Error(String(data?.error || "Adressfunktionen svarade med fel."));
+  }
+  return data;
+}
+
+function buildResponsibleLookupPeople() {
+  return state.responsible.map((person, index) => ({
+    index,
+    role: person.role || "",
+    name: person.name || ""
+  }));
+}
+
+async function refreshResponsibleEmailStatuses() {
+  if (isReadOnlyMode || !ADDRESS_BOOK_API_URL) return;
+  const people = buildResponsibleLookupPeople();
+  try {
+    const data = await callAddressBook("lookup", { people });
+    for (const result of data.results || []) {
+      const index = Number.parseInt(String(result.index), 10);
+      if (!Number.isFinite(index) || !state.responsible[index]) continue;
+      state.responsible[index].emailLookupStatus = String(result.status || "");
+      state.responsible[index].emailFound = Boolean(result.emailFound);
+      if (result.emailFound) {
+        state.responsible[index].email = "";
+      }
+    }
+    renderResponsible();
+    saveState();
+  } catch (_error) {
+    // Address lookup is helpful but should not block planning.
+  }
+}
+
+async function suggestResponsibleEmail(index) {
+  const person = state.responsible[index];
+  if (!person) return;
+  try {
+    await callAddressBook("suggest", {
+      name: person.name || "",
+      email: person.email || "",
+      role: person.role || "",
+      serviceDate: state.date || ""
+    });
+    state.responsible[index].emailSuggestionSent = true;
+    renderResponsible();
+    saveState();
+  } catch (error) {
+    window.alert(String(error.message || "Kunde inte skicka adressförslaget."));
+  }
+}
+
+async function resolveResponsibleEmails() {
+  const people = buildResponsibleLookupPeople();
+  const data = ADDRESS_BOOK_API_URL ? await callAddressBook("resolve-emails", { people }) : { results: [] };
+  const lookupByIndex = new Map((data.results || []).map((result) => [Number(result.index), result]));
+  const emails = [];
+
+  for (const [index, person] of state.responsible.entries()) {
+    const manualEmail = String(person.email || "").trim();
+    if (isValidEmail(manualEmail)) {
+      emails.push(manualEmail);
+      continue;
+    }
+    const lookup = lookupByIndex.get(index);
+    if (lookup?.email && isValidEmail(lookup.email)) {
+      emails.push(lookup.email);
+    }
+  }
+
+  return [...new Set(emails)];
+}
+
+async function loadAddressSuggestions() {
+  if (!adminTokenParam || !el.addressAdminCard) return;
+  el.addressAdminCard.classList.remove("hidden");
+  try {
+    const data = await callAddressBook("list-suggestions");
+    renderAddressSuggestions(data.suggestions || []);
+  } catch (error) {
+    el.addressSuggestionList.innerHTML = `<p class="muted">${escapeHtml(error.message || "Kunde inte läsa adressförslag.")}</p>`;
+  }
+}
+
+function renderAddressSuggestions(suggestions) {
+  if (!suggestions.length) {
+    el.addressSuggestionList.innerHTML = `<p class="muted">Inga väntande adressförslag.</p>`;
+    return;
+  }
+
+  el.addressSuggestionList.innerHTML = suggestions
+    .map(
+      (suggestion) => `
+        <div class="suggestion-row">
+          <div>
+            <strong>${escapeHtml(suggestion.calendar_name || "")}</strong>
+            <span>${escapeHtml(suggestion.email || "")}</span>
+            <small>${escapeHtml([suggestion.role, suggestion.service_date].filter(Boolean).join(" · "))}</small>
+          </div>
+          <div class="suggestion-actions">
+            <button type="button" data-approve-suggestion="${escapeHtml(suggestion.id)}">Godkänn</button>
+            <button type="button" class="danger" data-reject-suggestion="${escapeHtml(suggestion.id)}">Avvisa</button>
+          </div>
+        </div>
+      `
+    )
+    .join("");
+
+  el.addressSuggestionList.querySelectorAll("[data-approve-suggestion]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      await callAddressBook("approve-suggestion", { id: button.dataset.approveSuggestion });
+      loadAddressSuggestions();
+    });
+  });
+
+  el.addressSuggestionList.querySelectorAll("[data-reject-suggestion]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      await callAddressBook("reject-suggestion", { id: button.dataset.rejectSuggestion });
+      loadAddressSuggestions();
+    });
+  });
 }
 
 function isCloseHymnMatch(search, label) {
@@ -804,10 +1041,16 @@ function renderPreview() {
 }
 
 async function createMailDraft() {
-  const to = state.responsible
-    .map((person) => person.email.trim())
-    .filter(Boolean)
+  let to = state.responsible
+    .map((person) => String(person.email || "").trim())
+    .filter((email) => isValidEmail(email))
     .join(",");
+
+  try {
+    to = (await resolveResponsibleEmails()).join(",");
+  } catch (_error) {
+    // Fall back to manually filled addresses if the address book is unreachable.
+  }
 
   if (!currentShareToken) {
     await persistState();
@@ -815,14 +1058,7 @@ async function createMailDraft() {
 
   const plan = buildPlanData();
   const subject = `Gudstjänstordning ${plan.dateLabel}`;
-  const readUrl = currentShareToken
-    ? (() => {
-        const url = new URL(window.location.href);
-        url.searchParams.delete("plan");
-        url.searchParams.set("read", currentShareToken);
-        return url.toString();
-      })()
-    : "[Länk]";
+  const readUrl = currentShareToken ? buildReadUrl() : "[Länk]";
 
   const body = [
     "Hej!",
@@ -1255,6 +1491,7 @@ async function openPlanByDate(dateIso) {
   renderResponsible();
   renderAgenda();
   renderPreview();
+  refreshResponsibleEmailStatuses();
 }
 
 async function refreshReadOnlyPlan() {

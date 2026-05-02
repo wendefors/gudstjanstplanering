@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Gudstjänstplanering</title>
-    <link rel="stylesheet" href="styles.css?v=20260402d" />
+    <link rel="stylesheet" href="styles.css?v=20260502e" />
   </head>
   <body>
     <header class="topbar">
@@ -41,6 +41,11 @@
         <h2>Ansvariga</h2>
         <div id="responsibleList"></div>
         <button id="addResponsible" type="button">Lägg till ansvarig</button>
+      </section>
+
+      <section id="cardAddressAdmin" class="card hidden">
+        <h2>Adressförslag</h2>
+        <div id="addressSuggestionList" class="suggestion-list"></div>
       </section>
 
       <section id="cardChecklist" class="card">
@@ -86,6 +91,12 @@
         <input data-field="role" type="text" placeholder="Roll (t.ex. Predikant)" class="resp-role" />
         <input data-field="name" type="text" placeholder="Namn" class="resp-name" />
         <input data-field="email" type="email" placeholder="E-post" class="resp-email" />
+        <div class="email-tools">
+          <span data-field="emailStatus" class="email-status"></span>
+          <button data-action="suggestEmail" type="button" class="secondary suggest-email-btn hidden">
+            Föreslå till adresslistan
+          </button>
+        </div>
         <button data-remove="responsible" type="button" class="danger resp-remove">Ta bort</button>
       </div>
     </template>
@@ -144,7 +155,8 @@
         ? "https://ejymotvpbhrpzpblfwon.functions.supabase.co/service-group"
         : "";
       window.PLANS_API_URL = "https://ejymotvpbhrpzpblfwon.functions.supabase.co/plans";
+      window.ADDRESS_BOOK_API_URL = "https://ejymotvpbhrpzpblfwon.functions.supabase.co/address-book";
     </script>
-    <script src="app.js?v=20260402d" defer></script>
+    <script src="app.js?v=20260502g" defer></script>
   </body>
 </html>
