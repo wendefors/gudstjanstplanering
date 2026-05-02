@@ -618,3 +618,10 @@ Den här filen ska fungera som startpunkt för en ny chattsession eller efter ko
 - Nästa tryck försöker kopiera direkt i användarens knapptryckning, vilket fungerar bättre på iOS.
 - Om även det misslyckas visas prompt med länken som sista fallback.
 - `app.js` cache-bumpad till `20260502i`.
+
+2026-05-02:
+- Gjorde adminläge till separat visuell vy.
+- `?admin=<token>` utan `read` visar nu bara blocket `Adressförslag` och döljer planering, checklista, mötespunkter, livevy och export.
+- Adminläge använder fortfarande samma `address-book`-funktion för att lista/godkänna/avvisa förslag.
+- Syftet är att minska risken att någon planerar eller delar läslänk från admin-URL.
+- `app.js` cache-bumpad till `20260502j`, `styles.css` till `20260502f`.

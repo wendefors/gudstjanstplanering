@@ -9,6 +9,7 @@ const urlParams = new URLSearchParams(window.location.search);
 const readTokenParam = String(urlParams.get("read") || "").trim();
 const planIdParam = String(urlParams.get("plan") || "").trim();
 const adminTokenParam = String(urlParams.get("admin") || "").trim();
+const isAdminMode = Boolean(adminTokenParam && !readTokenParam);
 const bibleBookChapterCounts = [
   50, 40, 27, 36, 34, 24, 21, 4, 31, 24, 22, 25, 29, 36, 10, 13, 10, 42, 150, 31, 12, 8, 66, 52, 5, 48, 12, 14, 3,
   9, 1, 4, 7, 3, 3, 3, 2, 14, 4, 28, 16, 24, 21, 28, 16, 16, 13, 6, 6, 4, 4, 5, 3, 6, 4, 3, 1, 13, 5, 5, 3, 5, 1,
@@ -85,12 +86,14 @@ async function init() {
   renderResponsible();
   renderAgenda();
   renderPreview();
+  if (isAdminMode) {
+    applyAdminMode();
+    loadAddressSuggestions();
+    return;
+  }
   if (!isReadOnlyMode) {
     queueSaveState();
     refreshResponsibleEmailStatuses();
-    if (adminTokenParam) {
-      loadAddressSuggestions();
-    }
   } else {
     applyReadOnlyMode();
     window.setInterval(() => {
@@ -100,6 +103,8 @@ async function init() {
 }
 
 function wireTopFields() {
+  if (isAdminMode) return;
+
   if (isReadOnlyMode) {
     el.serviceDate.disabled = true;
     el.meetingLeader.readOnly = true;
@@ -124,6 +129,8 @@ function wireTopFields() {
 }
 
 function wireActions() {
+  if (isAdminMode) return;
+
   if (!isReadOnlyMode) {
     el.addResponsible.addEventListener("click", () => {
       state.responsible.push({ role: "", name: "", email: "", locked: false });
@@ -163,7 +170,7 @@ function wireActions() {
 }
 
 function wirePersistenceFallbacks() {
-  if (isReadOnlyMode || !PLANS_API_URL) return;
+  if (isReadOnlyMode || isAdminMode || !PLANS_API_URL) return;
   window.addEventListener("pagehide", persistStateOnPageHide);
 }
 
@@ -171,6 +178,14 @@ function applyReadOnlyMode() {
   document.body.classList.add("read-only-mode");
   if (el.liveHeading) el.liveHeading.textContent = "Gudstjänstordning";
   if (el.actionsHeading) el.actionsHeading.textContent = "Export";
+}
+
+function applyAdminMode() {
+  document.body.classList.add("admin-mode");
+  document.querySelectorAll("input, select, button, textarea").forEach((control) => {
+    if (el.addressAdminCard?.contains(control)) return;
+    control.disabled = true;
+  });
 }
 
 async function copyReadLink() {

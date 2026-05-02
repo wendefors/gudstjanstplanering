@@ -392,6 +392,15 @@ body.read-only-mode #cardAgenda {
   display: none;
 }
 
+body.admin-mode #cardBasicInfo,
+body.admin-mode #cardResponsibles,
+body.admin-mode #cardChecklist,
+body.admin-mode #cardAgenda,
+body.admin-mode #cardLive,
+body.admin-mode #cardActions {
+  display: none;
+}
+
 .bible-ref {
   display: grid;
   grid-template-columns: 1.5fr 0.7fr 1fr;
