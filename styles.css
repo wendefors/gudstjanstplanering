@@ -288,6 +288,16 @@ button.secondary:hover {
   border-radius: 0 10px 10px 0;
 }
 
+.plan-title-content {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.plan-title-content span {
+  min-width: 0;
+}
+
 .plan-num-badge {
   display: inline-flex;
   align-items: center;
@@ -368,6 +378,64 @@ body.read-only-mode #cardAgenda {
   align-items: center;
   justify-content: center;
   white-space: nowrap;
+}
+
+.agenda-note-btn {
+  width: 52px;
+}
+
+.agenda-note-btn.has-note,
+.plan-note-btn {
+  background: #f2f7e7;
+  border-color: var(--primary);
+  color: #365117;
+}
+
+.plan-note-btn {
+  width: 1.55rem;
+  height: 1.55rem;
+  padding: 0;
+  border-radius: 999px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.86rem;
+  line-height: 1;
+}
+
+.note-dialog {
+  width: min(560px, calc(100vw - 2rem));
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0;
+  box-shadow: 0 18px 60px rgba(20, 20, 20, 0.22);
+}
+
+.note-dialog::backdrop {
+  background: rgba(20, 20, 20, 0.34);
+}
+
+.note-dialog-content {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem;
+}
+
+.note-dialog textarea {
+  width: 100%;
+  min-height: 9rem;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.65rem;
+  font: inherit;
+}
+
+.note-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
 }
 
 /* iPad/tablet safeguard: avoid date input overlap in Grundinfo. */

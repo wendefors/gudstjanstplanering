@@ -72,7 +72,8 @@ function normalizePlanPayload(raw: any, hideEmails = false) {
         ...item,
         type: String(item?.type || "custom"),
         title: String(item?.title || ""),
-        owner: String(item?.owner || "")
+        owner: String(item?.owner || ""),
+        note: String(item?.note || "")
       }))
     : [];
 

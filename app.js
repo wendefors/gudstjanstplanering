@@ -27,17 +27,19 @@ const defaultResponsibleRoles = [
 
 function createDefaultAgenda() {
   return [
-    { type: "custom", title: "Välkommen till gudstjänst", owner: "" },
-    { type: "custom", title: "Pålysningar", owner: "" }
+    { type: "custom", title: "Välkommen till gudstjänst", owner: "", note: "" },
+    { type: "custom", title: "Pålysningar", owner: "", note: "" }
   ];
 }
 
 const defaultAgendaOwnerTitles = new Set(["välkommen till gudstjänst", "pålysningar"]);
 let currentPlanId = "";
 let currentShareToken = "";
+let currentShareExpiresAt = "";
 let saveTimer = null;
 let isReadOnlyMode = Boolean(readTokenParam);
 let state = createDefaultState();
+let activeAgendaNoteIndex = -1;
 
 const el = {
   serviceDate: document.querySelector("#serviceDate"),
@@ -57,7 +59,12 @@ const el = {
   imageBtn: document.querySelector("#imageBtn"),
   readLinkBtn: document.querySelector("#readLinkBtn"),
   mailBtn: document.querySelector("#mailBtn"),
-  clearBtn: document.querySelector("#clearBtn")
+  clearBtn: document.querySelector("#clearBtn"),
+  agendaNoteDialog: document.querySelector("#agendaNoteDialog"),
+  agendaNoteTitle: document.querySelector("#agendaNoteTitle"),
+  agendaNoteText: document.querySelector("#agendaNoteText"),
+  agendaNoteClose: document.querySelector("#agendaNoteClose"),
+  agendaNoteSave: document.querySelector("#agendaNoteSave")
 };
 
 async function init() {
@@ -68,6 +75,7 @@ async function init() {
 
   wireTopFields();
   wireActions();
+  wirePersistenceFallbacks();
   renderResponsible();
   renderAgenda();
   renderPreview();
@@ -139,6 +147,14 @@ function wireActions() {
     el.mailBtn.hidden = true;
     el.clearBtn.hidden = true;
   }
+
+  el.agendaNoteClose.addEventListener("click", closeAgendaNoteDialog);
+  el.agendaNoteSave.addEventListener("click", saveAgendaNoteFromDialog);
+}
+
+function wirePersistenceFallbacks() {
+  if (isReadOnlyMode || !PLANS_API_URL) return;
+  window.addEventListener("pagehide", persistStateOnPageHide);
 }
 
 function applyReadOnlyMode() {
@@ -148,24 +164,42 @@ function applyReadOnlyMode() {
 }
 
 async function copyReadLink() {
-  if (!currentShareToken) {
-    await persistState();
-  }
-  if (!currentShareToken) {
-    window.alert("Kunde inte skapa läslänk ännu. Testa igen om en sekund.");
-    return;
-  }
-
-  const url = new URL(window.location.href);
-  url.searchParams.delete("plan");
-  url.searchParams.set("read", currentShareToken);
-  const readUrl = url.toString();
+  const originalText = el.readLinkBtn.textContent;
+  el.readLinkBtn.disabled = true;
+  el.readLinkBtn.textContent = "Skapar länk...";
 
   try {
-    await navigator.clipboard.writeText(readUrl);
-    window.alert("Läslänk kopierad.");
+    const saved = await persistState();
+    if (!saved || !currentShareToken) {
+      window.alert("Kunde inte skapa läslänk ännu. Testa igen om en sekund.");
+      return;
+    }
+
+    const expiresAt = new Date(currentShareExpiresAt).getTime();
+    if (Number.isFinite(expiresAt) && Date.now() > expiresAt) {
+      window.alert("Läslänken för den här gudstjänsten har gått ut eftersom datumet är passerat.");
+      return;
+    }
+
+    const url = new URL(window.location.href);
+    url.searchParams.delete("plan");
+    url.searchParams.set("read", currentShareToken);
+    const readUrl = url.toString();
+
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error("Clipboard saknas.");
+      }
+      await navigator.clipboard.writeText(readUrl);
+      window.alert("Läslänk kopierad.");
+    } catch (_error) {
+      window.prompt("Kopiera läslänken:", readUrl);
+    }
   } catch (_error) {
-    window.prompt("Kopiera läslänken:", readUrl);
+    window.alert("Kunde inte skapa läslänk. Kontrollera nätverket och försök igen.");
+  } finally {
+    el.readLinkBtn.disabled = false;
+    el.readLinkBtn.textContent = originalText;
   }
 }
 
@@ -234,6 +268,7 @@ function renderAgenda() {
     const bibleChapter = node.querySelector('[data-field="bibleChapter"]');
     const bibleVerses = node.querySelector('[data-field="bibleVerses"]');
     const owner = node.querySelector('[data-field="owner"]');
+    const noteButton = node.querySelector('[data-note="agenda"]');
     const moveUp = node.querySelector('[data-move="up"]');
     const moveDown = node.querySelector('[data-move="down"]');
     const remove = node.querySelector('[data-remove="agenda"]');
@@ -254,6 +289,9 @@ function renderAgenda() {
       normalizedItem.bibleChapter || "1"
     );
     bibleVerses.value = normalizedItem.bibleVerses || "";
+    const hasNote = Boolean(String(normalizedItem.note || "").trim());
+    noteButton.classList.toggle("has-note", hasNote);
+    noteButton.textContent = hasNote ? "Info*" : "Info";
     type.disabled = isReadOnlyMode;
     title.readOnly = isReadOnlyMode;
     hymnSearch.readOnly = isReadOnlyMode;
@@ -348,6 +386,10 @@ function renderAgenda() {
       owner.addEventListener("input", (event) => {
         state.agenda[index].owner = event.target.value;
         renderPreview();
+      });
+
+      noteButton.addEventListener("click", () => {
+        openAgendaNoteEditor(index);
       });
 
       remove.addEventListener("click", () => {
@@ -479,8 +521,58 @@ function normalizeAgendaItem(item) {
 
   next.owner = next.owner || "";
   next.title = next.title || "";
+  next.note = typeof next.note === "string" ? next.note : "";
 
   return next;
+}
+
+function openAgendaNoteEditor(index) {
+  activeAgendaNoteIndex = index;
+  const item = state.agenda[index] || {};
+  el.agendaNoteTitle.textContent = "Anteckning";
+  el.agendaNoteText.value = item.note || "";
+  el.agendaNoteText.readOnly = false;
+  el.agendaNoteSave.hidden = false;
+  openAgendaNoteDialog();
+}
+
+function openAgendaNoteReader(index) {
+  activeAgendaNoteIndex = -1;
+  const item = state.agenda[index] || {};
+  el.agendaNoteTitle.textContent = "Anteckning";
+  el.agendaNoteText.value = item.note || "";
+  el.agendaNoteText.readOnly = true;
+  el.agendaNoteSave.hidden = true;
+  openAgendaNoteDialog();
+}
+
+function openAgendaNoteDialog() {
+  if (typeof el.agendaNoteDialog.showModal === "function") {
+    el.agendaNoteDialog.showModal();
+    return;
+  }
+  el.agendaNoteDialog.setAttribute("open", "");
+}
+
+function closeAgendaNoteDialog() {
+  activeAgendaNoteIndex = -1;
+  if (typeof el.agendaNoteDialog.close === "function") {
+    el.agendaNoteDialog.close();
+    return;
+  }
+  el.agendaNoteDialog.removeAttribute("open");
+}
+
+function saveAgendaNoteFromDialog() {
+  if (activeAgendaNoteIndex < 0 || !state.agenda[activeAgendaNoteIndex]) {
+    closeAgendaNoteDialog();
+    return;
+  }
+
+  state.agenda[activeAgendaNoteIndex].note = el.agendaNoteText.value.trim();
+  closeAgendaNoteDialog();
+  renderAgenda();
+  renderPreview();
 }
 
 function getInitialsForRole(roleName) {
@@ -650,9 +742,11 @@ function buildPlanData() {
     agenda: state.agenda
       .map((item, index) => ({
         number: index + 1,
+        sourceIndex: index,
         category: getAgendaCategory(item),
         title: getAgendaTitle(item),
-        owner: item.owner || ""
+        owner: item.owner || "",
+        note: item.note || ""
       }))
       .filter((item) => item.title || item.category || item.owner)
   };
@@ -667,14 +761,19 @@ function renderPreview() {
 
   const agendaRows = plan.agenda
     .map(
-      (item) => `
+      (item) => {
+        const noteButton = item.note
+          ? `<button type="button" class="plan-note-btn" data-note-index="${item.sourceIndex}" title="Visa anteckning">i</button>`
+          : "";
+        return `
         <tr>
           <td class="plan-col-num"><span class="plan-num-badge">${item.number}</span></td>
           <td class="plan-col-category">${escapeHtml(item.category || "")}</td>
-          <td class="plan-col-title">${escapeHtml(item.title || "")}</td>
+          <td class="plan-col-title"><div class="plan-title-content"><span>${escapeHtml(item.title || "")}</span>${noteButton}</div></td>
           <td class="plan-col-owner">${escapeHtml(item.owner || "")}</td>
         </tr>
-      `
+      `;
+      }
     )
     .join("");
 
@@ -691,6 +790,15 @@ function renderPreview() {
         : "<div>Inga mötespunkter inlagda.</div>"
     }
   `;
+
+  el.preview.querySelectorAll("[data-note-index]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const index = Number.parseInt(button.dataset.noteIndex || "-1", 10);
+      if (Number.isFinite(index) && index >= 0) {
+        openAgendaNoteReader(index);
+      }
+    });
+  });
 
   saveState();
 }
@@ -998,6 +1106,7 @@ async function loadState() {
     if (loaded?.plan) {
       currentPlanId = loaded.id || "";
       currentShareToken = loaded.shareToken || readTokenParam;
+      currentShareExpiresAt = loaded.shareExpiresAt || "";
       return loaded.plan;
     }
     return defaults;
@@ -1008,6 +1117,7 @@ async function loadState() {
     if (loaded?.plan) {
       currentPlanId = loaded.id || planIdParam;
       currentShareToken = loaded.shareToken || "";
+      currentShareExpiresAt = loaded.shareExpiresAt || "";
       return loaded.plan;
     }
   }
@@ -1017,6 +1127,7 @@ async function loadState() {
     if (loadedByDate?.found && loadedByDate.plan) {
       currentPlanId = loadedByDate.id || "";
       currentShareToken = loadedByDate.shareToken || "";
+      currentShareExpiresAt = loadedByDate.shareExpiresAt || "";
       return loadedByDate.plan;
     }
   }
@@ -1056,6 +1167,7 @@ async function fetchPlanByReadToken(token) {
     return {
       id: data.id || "",
       shareToken: data.shareToken || token,
+      shareExpiresAt: data.shareExpiresAt || "",
       plan: extractPlanPayload(data)
     };
   } catch (_error) {
@@ -1074,6 +1186,7 @@ async function fetchPlanById(id) {
     return {
       id: data.id || id,
       shareToken: data.shareToken || "",
+      shareExpiresAt: data.shareExpiresAt || "",
       plan: extractPlanPayload(data)
     };
   } catch (_error) {
@@ -1094,6 +1207,7 @@ async function fetchPlanByDate(dateIso) {
       found: true,
       id: data.id || "",
       shareToken: data.shareToken || "",
+      shareExpiresAt: data.shareExpiresAt || "",
       plan: extractPlanPayload(data)
     };
   } catch (_error) {
@@ -1116,6 +1230,7 @@ async function openPlanByDate(dateIso) {
   if (loaded?.found && loaded.plan) {
     currentPlanId = loaded.id || "";
     currentShareToken = loaded.shareToken || "";
+    currentShareExpiresAt = loaded.shareExpiresAt || "";
     state = normalizeLoadedState(loaded.plan);
     state.date = targetDate;
     const url = new URL(window.location.href);
@@ -1125,6 +1240,7 @@ async function openPlanByDate(dateIso) {
   } else {
     currentPlanId = "";
     currentShareToken = "";
+    currentShareExpiresAt = "";
     state = createDefaultState();
     state.date = targetDate;
     const url = new URL(window.location.href);
@@ -1155,8 +1271,39 @@ async function refreshReadOnlyPlan() {
 }
 
 async function persistState() {
-  if (isReadOnlyMode || !PLANS_API_URL) return;
-  const body = {
+  if (isReadOnlyMode || !PLANS_API_URL) return false;
+  const body = buildPersistBody();
+
+  const response = await fetch(PLANS_API_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  if (!response.ok) return false;
+  const data = await response.json();
+  if (!data?.ok) return false;
+
+  if (typeof data.id === "string" && data.id) {
+    currentPlanId = data.id;
+    const url = new URL(window.location.href);
+    url.searchParams.set("plan", currentPlanId);
+    url.searchParams.delete("read");
+    window.history.replaceState({}, "", url.toString());
+  }
+
+  if (typeof data.shareToken === "string" && data.shareToken) {
+    currentShareToken = data.shareToken;
+  }
+
+  if (typeof data.shareExpiresAt === "string" && data.shareExpiresAt) {
+    currentShareExpiresAt = data.shareExpiresAt;
+  }
+
+  return true;
+}
+
+function buildPersistBody() {
+  return {
     id: currentPlanId || null,
     plan: {
       date: state.date,
@@ -1171,27 +1318,21 @@ async function persistState() {
       agenda: state.agenda.map((item) => ({ ...item }))
     }
   };
+}
 
-  const response = await fetch(PLANS_API_URL, {
+function persistStateOnPageHide() {
+  if (isReadOnlyMode || !PLANS_API_URL) return;
+  const json = JSON.stringify(buildPersistBody());
+  const blob = new Blob([json], { type: "application/json" });
+  if (navigator.sendBeacon?.(PLANS_API_URL, blob)) return;
+  fetch(PLANS_API_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body)
+    body: json,
+    keepalive: true
+  }).catch(() => {
+    // Best-effort save while the page is unloading.
   });
-  if (!response.ok) return;
-  const data = await response.json();
-  if (!data?.ok) return;
-
-  if (typeof data.id === "string" && data.id) {
-    currentPlanId = data.id;
-    const url = new URL(window.location.href);
-    url.searchParams.set("plan", currentPlanId);
-    url.searchParams.delete("read");
-    window.history.replaceState({}, "", url.toString());
-  }
-
-  if (typeof data.shareToken === "string" && data.shareToken) {
-    currentShareToken = data.shareToken;
-  }
 }
 
 function createDefaultState() {
@@ -1240,7 +1381,7 @@ function normalizeLoadedState(rawState) {
     meetingLeader: typeof source.meetingLeader === "string" ? source.meetingLeader : "",
     theme: typeof source.theme === "string" ? source.theme : "",
     responsible: normalizedResponsible,
-    agenda: Array.isArray(source.agenda) ? source.agenda : []
+    agenda: Array.isArray(source.agenda) ? source.agenda.map((item) => normalizeAgendaItem(item)) : []
   };
 }
 
@@ -1252,6 +1393,7 @@ function resetAllData() {
   const targetDate = isValidIsoDate(selectedDate) ? selectedDate : state.date;
   currentPlanId = "";
   currentShareToken = "";
+  currentShareExpiresAt = "";
   state = createDefaultState();
   state.date = targetDate;
   el.serviceDate.value = state.date;

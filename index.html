@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Gudstjänstplanering</title>
-    <link rel="stylesheet" href="styles.css?v=20260402c" />
+    <link rel="stylesheet" href="styles.css?v=20260402d" />
   </head>
   <body>
     <header class="topbar">
@@ -114,12 +114,24 @@
 
         <input data-field="owner" type="text" placeholder="Ansvarig" class="agenda-owner" />
         <div class="agenda-actions">
+          <button data-note="agenda" type="button" class="secondary agenda-action-btn agenda-note-btn" title="Anteckning">Info</button>
           <button data-move="up" type="button" class="secondary agenda-action-btn" title="Flytta upp">Upp</button>
           <button data-move="down" type="button" class="secondary agenda-action-btn" title="Flytta ner">Ner</button>
           <button data-remove="agenda" type="button" class="danger agenda-action-btn" title="Ta bort">Ta bort</button>
         </div>
       </div>
     </template>
+
+    <dialog id="agendaNoteDialog" class="note-dialog">
+      <div class="note-dialog-content">
+        <h3 id="agendaNoteTitle">Anteckning</h3>
+        <textarea id="agendaNoteText" rows="6" placeholder="Skriv en kort anteckning"></textarea>
+        <div class="note-dialog-actions">
+          <button id="agendaNoteClose" type="button" class="secondary">Stäng</button>
+          <button id="agendaNoteSave" type="button">Spara</button>
+        </div>
+      </div>
+    </dialog>
 
     <script src="data/bibleBooks.js?v=20260331f"></script>
     <script src="data/hymnCatalog.js?v=20260331f"></script>
@@ -133,6 +145,6 @@
         : "";
       window.PLANS_API_URL = "https://ejymotvpbhrpzpblfwon.functions.supabase.co/plans";
     </script>
-    <script src="app.js?v=20260402a" defer></script>
+    <script src="app.js?v=20260402d" defer></script>
   </body>
 </html>
