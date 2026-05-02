@@ -611,3 +611,10 @@ Den här filen ska fungera som startpunkt för en ny chattsession eller efter ko
 - Läsläge döljer sedan tidigare alltid e-post.
 - `plans` Edge Function är deployad efter ändringen.
 - `app.js` cache-bumpad till `20260502h`.
+
+2026-05-02:
+- Förbättrade iPhone-fallback för `Kopiera läslänk`.
+- Om automatisk kopiering blockeras efter async-sparning sparas länken temporärt och knappen byter till `Tryck igen för att kopiera`.
+- Nästa tryck försöker kopiera direkt i användarens knapptryckning, vilket fungerar bättre på iOS.
+- Om även det misslyckas visas prompt med länken som sista fallback.
+- `app.js` cache-bumpad till `20260502i`.

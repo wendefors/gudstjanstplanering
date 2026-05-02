@@ -43,6 +43,7 @@ let isReadOnlyMode = Boolean(readTokenParam);
 let state = createDefaultState();
 let activeAgendaNoteIndex = -1;
 let addressLookupTimer = null;
+let pendingReadUrlForCopy = "";
 
 const el = {
   serviceDate: document.querySelector("#serviceDate"),
@@ -174,6 +175,21 @@ function applyReadOnlyMode() {
 
 async function copyReadLink() {
   const originalText = el.readLinkBtn.textContent;
+
+  if (pendingReadUrlForCopy) {
+    const fallbackUrl = pendingReadUrlForCopy;
+    try {
+      await copyTextToClipboard(fallbackUrl);
+      pendingReadUrlForCopy = "";
+      showReadLinkButtonFeedback("Läslänk kopierad!", "Kopiera läslänk");
+    } catch (_error) {
+      window.prompt("Kopiera läslänken:", fallbackUrl);
+      pendingReadUrlForCopy = "";
+      el.readLinkBtn.textContent = "Kopiera läslänk";
+    }
+    return;
+  }
+
   el.readLinkBtn.disabled = true;
   el.readLinkBtn.textContent = "Skapar länk...";
 
@@ -194,15 +210,10 @@ async function copyReadLink() {
 
     try {
       await copyTextToClipboard(readUrl);
-      el.readLinkBtn.textContent = "Läslänk kopierad!";
-      window.setTimeout(() => {
-        if (!el.readLinkBtn.disabled) {
-          el.readLinkBtn.textContent = originalText;
-        }
-      }, 2500);
+      showReadLinkButtonFeedback("Läslänk kopierad!", originalText);
     } catch (_error) {
-      window.prompt("Kopiera läslänken:", readUrl);
-      el.readLinkBtn.textContent = originalText;
+      pendingReadUrlForCopy = readUrl;
+      el.readLinkBtn.textContent = "Tryck igen för att kopiera";
     }
   } catch (_error) {
     window.alert("Kunde inte skapa läslänk. Kontrollera nätverket och försök igen.");
@@ -210,6 +221,15 @@ async function copyReadLink() {
   } finally {
     el.readLinkBtn.disabled = false;
   }
+}
+
+function showReadLinkButtonFeedback(message, originalText) {
+  el.readLinkBtn.textContent = message;
+  window.setTimeout(() => {
+    if (!el.readLinkBtn.disabled && !pendingReadUrlForCopy) {
+      el.readLinkBtn.textContent = originalText;
+    }
+  }, 2500);
 }
 
 async function copyTextToClipboard(text) {
