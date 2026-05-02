@@ -1540,6 +1540,7 @@ async function persistState() {
 }
 
 function buildPersistBody() {
+  const clearEmails = shouldClearManualEmails(state.date);
   return {
     id: currentPlanId || null,
     plan: {
@@ -1549,12 +1550,19 @@ function buildPersistBody() {
       responsible: state.responsible.map((item) => ({
         role: item.role,
         name: item.name,
-        email: item.email,
+        email: clearEmails ? "" : item.email,
         locked: Boolean(item.locked)
       })),
       agenda: state.agenda.map((item) => ({ ...item }))
     }
   };
+}
+
+function shouldClearManualEmails(dateIso) {
+  if (!isValidIsoDate(dateIso)) return false;
+  const expires = new Date(`${dateIso}T23:59:59.000Z`);
+  expires.setUTCDate(expires.getUTCDate() + 2);
+  return Date.now() > expires.getTime();
 }
 
 function persistStateOnPageHide() {

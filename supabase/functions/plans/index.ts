@@ -56,13 +56,25 @@ function computeShareExpiry(dateIso: string) {
   return base.toISOString();
 }
 
+function shouldClearManualEmails(dateIso: string) {
+  if (!isValidDateIso(dateIso)) return false;
+  const expires = new Date(computeShareExpiry(dateIso)).getTime();
+  return Number.isFinite(expires) && Date.now() > expires;
+}
+
+function hasStoredEmails(payload: any) {
+  const responsible = Array.isArray(payload?.responsible) ? payload.responsible : [];
+  return responsible.some((item: any) => String(item?.email || "").trim());
+}
+
 function normalizePlanPayload(raw: any, hideEmails = false) {
   const source = raw && typeof raw === "object" ? raw : {};
+  const clearEmails = Boolean(hideEmails || shouldClearManualEmails(String(source.date || "")));
   const responsible = Array.isArray(source.responsible)
     ? source.responsible.map((item: any) => ({
         role: String(item?.role || ""),
         name: String(item?.name || ""),
-        email: hideEmails ? "" : String(item?.email || ""),
+        email: clearEmails ? "" : String(item?.email || ""),
         locked: Boolean(item?.locked)
       }))
     : [];
@@ -84,6 +96,22 @@ function normalizePlanPayload(raw: any, hideEmails = false) {
     responsible,
     agenda
   };
+}
+
+async function sanitizeExpiredEmailsInRow(row: any) {
+  if (!row?.id || !shouldClearManualEmails(String(row?.payload?.date || "")) || !hasStoredEmails(row.payload)) {
+    return row;
+  }
+
+  const payload = normalizePlanPayload(row.payload, false);
+  const { data, error } = await db
+    .from("plans")
+    .update({ payload })
+    .eq("id", row.id)
+    .select("id,payload,share_token,share_expires_at,updated_at")
+    .single();
+  if (error) throw error;
+  return data || { ...row, payload };
 }
 
 async function getPlanByToken(token: string) {
@@ -112,7 +140,8 @@ async function getPlanById(id: string) {
     .eq("id", id)
     .maybeSingle();
   if (error) throw error;
-  return data || null;
+  if (!data) return null;
+  return sanitizeExpiredEmailsInRow(data);
 }
 
 async function getLatestPlanByDate(dateIso: string) {
@@ -123,7 +152,8 @@ async function getLatestPlanByDate(dateIso: string) {
     .order("updated_at", { ascending: false })
     .limit(1);
   if (error) throw error;
-  return Array.isArray(data) && data.length ? data[0] : null;
+  if (!Array.isArray(data) || !data.length) return null;
+  return sanitizeExpiredEmailsInRow(data[0]);
 }
 
 async function upsertPlan(id: string | null, plan: any) {

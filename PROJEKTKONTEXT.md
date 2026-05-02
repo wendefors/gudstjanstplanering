@@ -602,3 +602,12 @@ Den här filen ska fungera som startpunkt för en ny chattsession eller efter ko
 - Ny helper `buildReadUrl()` tar alltid bort `admin` och `plan` innan `read=<share_token>` sätts.
 - Används både av `Kopiera läslänk` och `Skapa e-postutkast`.
 - `app.js` cache-bumpad till `20260502g`.
+
+2026-05-02:
+- Lade till rensning av manuellt sparade e-postadresser två dagar efter gudstjänstdatumet.
+- Backend: `plans` normaliserar payload så `responsible[].email` töms när datumets retentiontid passerat, både vid POST och vid GET via id/datum.
+- Backend uppdaterar också befintlig Supabase-rad när en gammal plan läses via id/datum och fortfarande innehåller manuella e-postadresser.
+- Frontend: `buildPersistBody()` tömmer e-postfält i payload för gamla datum innan sparning som extra skydd.
+- Läsläge döljer sedan tidigare alltid e-post.
+- `plans` Edge Function är deployad efter ändringen.
+- `app.js` cache-bumpad till `20260502h`.
