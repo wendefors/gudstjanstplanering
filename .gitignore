@@ -5,6 +5,7 @@
 
 # Local-only notes/files
 *.local
+PROJEKTKONTEXT.md
 *password*
 *lösenord*
 *secret*
