@@ -286,6 +286,7 @@ function renderResponsible() {
 
   state.responsible.forEach((person, index) => {
     const node = el.responsibleTemplate.content.firstElementChild.cloneNode(true);
+    node.dataset.responsibleIndex = String(index);
     const role = node.querySelector('[data-field="role"]');
     const name = node.querySelector('[data-field="name"]');
     const email = node.querySelector('[data-field="email"]');
@@ -866,11 +867,57 @@ async function refreshResponsibleEmailStatuses() {
         state.responsible[index].email = "";
       }
     }
-    renderResponsible();
+    if (isEditingResponsibleField()) {
+      updateResponsibleEmailUi();
+    } else {
+      renderResponsible();
+    }
     saveState();
   } catch (_error) {
     // Address lookup is helpful but should not block planning.
   }
+}
+
+function isEditingResponsibleField() {
+  const active = document.activeElement;
+  return Boolean(active && el.responsibleList?.contains(active) && ["INPUT", "SELECT", "TEXTAREA"].includes(active.tagName));
+}
+
+function updateResponsibleEmailUi() {
+  el.responsibleList.querySelectorAll("[data-responsible-index]").forEach((row) => {
+    const index = Number.parseInt(row.dataset.responsibleIndex || "-1", 10);
+    const person = state.responsible[index];
+    if (!person) return;
+
+    const email = row.querySelector('[data-field="email"]');
+    const emailStatus = row.querySelector('[data-field="emailStatus"]');
+    const suggestEmail = row.querySelector('[data-action="suggestEmail"]');
+    const emailIsFound = person.emailLookupStatus === "found";
+    const emailIsActive = document.activeElement === email;
+
+    if (email && !emailIsActive) {
+      email.readOnly = Boolean(isReadOnlyMode || emailIsFound);
+      email.value = emailIsFound ? "" : person.email;
+      email.placeholder = getEmailPlaceholder(person);
+      email.classList.toggle("readonly", emailIsFound);
+    }
+
+    if (emailStatus) {
+      emailStatus.textContent = person.emailSuggestionSent ? "Förslag skickat" : "";
+    }
+
+    if (suggestEmail) {
+      const shouldHideSuggestEmail = Boolean(
+        isReadOnlyMode ||
+          emailIsFound ||
+          person.emailSuggestionSent ||
+          !String(person.name || "").trim() ||
+          !isValidEmail(person.email)
+      );
+      suggestEmail.hidden = shouldHideSuggestEmail;
+      suggestEmail.classList.toggle("hidden", shouldHideSuggestEmail);
+    }
+  });
 }
 
 async function suggestResponsibleEmail(index) {
@@ -1556,11 +1603,14 @@ async function persistState() {
   if (!data?.ok) return false;
 
   if (typeof data.id === "string" && data.id) {
+    const previousPlanId = currentPlanId;
     currentPlanId = data.id;
     const url = new URL(window.location.href);
-    url.searchParams.set("plan", currentPlanId);
-    url.searchParams.delete("read");
-    window.history.replaceState({}, "", url.toString());
+    if (previousPlanId !== currentPlanId || url.searchParams.get("plan") !== currentPlanId || url.searchParams.has("read")) {
+      url.searchParams.set("plan", currentPlanId);
+      url.searchParams.delete("read");
+      window.history.replaceState({}, "", url.toString());
+    }
   }
 
   if (typeof data.shareToken === "string" && data.shareToken) {
